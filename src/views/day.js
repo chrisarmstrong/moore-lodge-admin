@@ -27,14 +27,15 @@ export function dayView({ date, sittings }) {
   const totalCovers = sittings.reduce((total, sitting) => total + sitting.covers, 0);
 
   const body = sittings.map((sitting) => {
-    const full = sitting.capacity != null && sitting.covers >= sitting.capacity;
+    const over = sitting.capacity != null && sitting.covers > sitting.capacity;
+    const full = sitting.capacity != null && sitting.covers === sitting.capacity;
     const of = sitting.capacity != null ? ` of ${sitting.capacity}` : '';
     const name = sitting.experience ? sitting.experience.name : 'Reservations';
 
     return `<section class="sitting">
       <h2>
         <span>${escape(sitting.time)} &middot; ${escape(name)}</span>
-        <span class="count${full ? ' full' : ''}">${sitting.covers}${escape(of)} guests</span>
+        <span class="count${over ? ' over' : full ? ' full' : ''}">${sitting.covers}${escape(of)} guests${over ? ' &middot; over capacity' : ''}</span>
       </h2>
       ${sitting.bookings.map(bookingRow).join('')}
     </section>`;

@@ -33,7 +33,8 @@ export function groupIntoSittings(bookings, experiences) {
         bookings: [],
         covers: 0,
         capacity: null,
-        unpaidCovers: 0,
+        toSettle: 0,
+        pending: 0,
       });
     }
     sittings.get(key).bookings.push(booking);
@@ -48,7 +49,13 @@ export function groupIntoSittings(bookings, experiences) {
       for (const booking of sitting.bookings) {
         if (holdsASeat(booking)) {
           sitting.covers += booking.partySize;
-          if (booking.payment === PAYMENT.unpaid) sitting.unpaidCovers += booking.partySize;
+          // A phone booking is unpaid by design — it settles on arrival, the
+          // way it always has. Counting those as a problem would flag most of
+          // the diary and train everyone to ignore the number. What is worth
+          // flagging is a guest who is mid-checkout and hasn't paid.
+          if (booking.payment === PAYMENT.unpaid) sitting.toSettle += booking.partySize;
+        } else if (isInFlight(booking)) {
+          sitting.pending += booking.partySize;
         }
       }
     }
@@ -94,11 +101,8 @@ export function monthGrid(isoMonth, sittingsByDate) {
       outside: false,
       sittings,
       covers: sittings.reduce((total, sitting) => total + sitting.covers, 0),
-      inFlight: sittings.reduce(
-        (total, sitting) => total + sitting.bookings.filter(isInFlight).length,
-        0,
-      ),
-      unpaidCovers: sittings.reduce((total, sitting) => total + sitting.unpaidCovers, 0),
+      pending: sittings.reduce((total, sitting) => total + sitting.pending, 0),
+      toSettle: sittings.reduce((total, sitting) => total + sitting.toSettle, 0),
     });
   }
 
@@ -113,14 +117,16 @@ export function monthGrid(isoMonth, sittingsByDate) {
 export function monthSummary(sittingsByDate) {
   let sittings = 0;
   let covers = 0;
-  let unpaidCovers = 0;
+  let toSettle = 0;
+  let pending = 0;
   let seatsOffered = 0;
 
   for (const list of sittingsByDate.values()) {
     for (const sitting of list) {
       sittings += 1;
       covers += sitting.covers;
-      unpaidCovers += sitting.unpaidCovers;
+      toSettle += sitting.toSettle;
+      pending += sitting.pending;
       if (sitting.capacity != null) seatsOffered += sitting.capacity;
     }
   }
@@ -128,7 +134,8 @@ export function monthSummary(sittingsByDate) {
   return {
     sittings,
     covers,
-    unpaidCovers,
+    toSettle,
+    pending,
     seatsOffered,
     occupancy: seatsOffered ? Math.round((covers / seatsOffered) * 100) : null,
   };

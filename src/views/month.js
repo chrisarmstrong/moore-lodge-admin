@@ -18,7 +18,8 @@ export function monthView({ month, weeks, summary, today }) {
     <div class="stat"><b>${summary.covers}</b><span>Guests booked</span></div>
     <div class="stat"><b>${summary.sittings}</b><span>Sittings with bookings</span></div>
     <div class="stat"><b>${summary.occupancy == null ? '—' : `${summary.occupancy}%`}</b><span>Of seats offered</span></div>
-    <div class="stat${summary.unpaidCovers ? ' flag' : ''}"><b>${summary.unpaidCovers}</b><span>Guests not paid for</span></div>
+    <div class="stat${summary.pending ? ' flag' : ''}"><b>${summary.pending}</b><span>Mid-checkout, unpaid</span></div>
+    <div class="stat"><b>${summary.toSettle}</b><span>To settle on arrival</span></div>
   </div>`;
 
   const header = WEEKDAY_INITIALS.map((initial) => `<div class="dow">${initial}</div>`).join('');
@@ -33,8 +34,22 @@ export function monthView({ month, weeks, summary, today }) {
     const pills = cell.sittings.map((sitting) => {
       const full = sitting.capacity != null && sitting.covers >= sitting.capacity;
       const pillClass = ['pill'];
-      if (full) pillClass.push('full');
-      else if (sitting.unpaidCovers) pillClass.push('unpaid');
+
+      // A sitting can exist with nobody actually in it — every booking on it is
+      // still mid-checkout, or has died. Showing "0/15" there reads as an empty
+      // sitting we opened, which is not what happened; show what is pending.
+      if (sitting.covers === 0) {
+        pillClass.push('pending');
+        const waiting = sitting.pending ? `${sitting.pending} pending` : 'none held';
+        return `<span class="${pillClass.join(' ')}">${escape(sitting.time)} <b>${escape(waiting)}</b></span>`;
+      }
+
+      // Over capacity happens for real — phone bookings bypass the online cap,
+      // so a sitting can quietly end up oversold. That needs to look different
+      // from a sitting that is merely sold out.
+      if (sitting.capacity != null && sitting.covers > sitting.capacity) pillClass.push('over');
+      else if (full) pillClass.push('full');
+      else if (sitting.pending) pillClass.push('unpaid');
       const of = sitting.capacity != null ? `/${sitting.capacity}` : '';
       return `<span class="${pillClass.join(' ')}">${escape(sitting.time)} <b>${sitting.covers}${of}</b></span>`;
     }).join('');

@@ -66,7 +66,7 @@ is('first sitting is 12:30 local', day[0].time, '12:30');
 is('covers exclude in-flight and cancelled', day[0].covers, 6);
 is('in-flight booking still listed', day[0].bookings.length, 3);
 is('capacity from experience', day[0].capacity, 15);
-is('unpaid covers counted', day[0].unpaidCovers, 2);
+is('unpaid covers counted', day[0].toSettle, 2);
 
 const summary = monthSummary(byDate);
 is('month covers', summary.covers, 9);
@@ -79,7 +79,7 @@ is('grid covers all days', weeks.flat().filter(c => !c.outside).length, 31);
 is('Aug 2026 needs 6 rows', weeks.length, 6);
 const cell28 = weeks.flat().find(c => c.date === '2026-08-28');
 is('cell 28 covers', cell28.covers, 9);
-is('cell 28 flags in-flight', cell28.inFlight, 1);
+is('cell 28 counts pending guests', cell28.pending, 2);
 
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);

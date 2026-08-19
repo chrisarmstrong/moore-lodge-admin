@@ -104,6 +104,8 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pill.full{border-left-color:var(--full)}
 .pill.unpaid{border-left-color:var(--warn)}
+.pill.pending{border-left-color:var(--rule-strong);color:var(--muted)}
+.pill.over{border-left-color:var(--warn);color:var(--warn);background:var(--warn-wash)}
 .pill b{font-variant-numeric:tabular-nums;font-weight:400}
 
 @media(max-width:560px){
@@ -119,6 +121,7 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 }
 .sitting > h2 .count{font-family:var(--body);font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sitting > h2 .count.full{color:var(--full)}
+.sitting > h2 .count.over{color:var(--warn)}
 
 .booking{padding:.85rem 1rem;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:2.5rem 1fr;gap:.25rem .8rem}
 .booking:last-child{border-bottom:0}
