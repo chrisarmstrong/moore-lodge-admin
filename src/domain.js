@@ -24,6 +24,9 @@
  * @property {string}  status        See STATUS.
  * @property {string}  payment       See PAYMENT.
  * @property {string}  source        'online' | 'phone' | 'walk-in'
+ * @property {Date}    createdAt     When the attempt was made — decides whether
+ *                                   an unfinished one is live or long dead.
+ * @property {string} [disposition]  Set by the calendar. See DISPOSITION.
  *
  * @typedef {object} Experience
  * @property {string}  id
@@ -77,11 +80,57 @@ export const PAYMENT = {
   refunded: 'refunded',
 };
 
+/**
+ * Wix expires a held or awaiting-payment reservation after ten minutes, but it
+ * leaves the record behind. So `HELD` on a booking made last Tuesday does not
+ * mean somebody is choosing a table right now — it means somebody didn't
+ * finish, days ago. Age is what separates the two.
+ */
+export const HOLD_MINUTES = 10;
+
+/**
+ * What an unfinished attempt actually is, once age and the rest of the sitting
+ * are taken into account. `status` says where Wix left it; this says what to do
+ * about it.
+ */
+export const DISPOSITION = {
+  live: 'live',                 // holds a seat
+  inProgress: 'in-progress',    // genuinely mid-checkout, this minute
+  abandoned: 'abandoned',       // gave up, reachable, never came back — chase it
+  superseded: 'superseded',     // gave up, then booked again successfully — noise
+  stale: 'stale',               // gave up before leaving a name — unreachable
+};
+
 /** Statuses that occupy a seat and belong on the diary. */
 const LIVE = new Set([STATUS.requested, STATUS.confirmed, STATUS.seated, STATUS.finished]);
 
 /** Statuses that are mid-flight — worth showing, but greyed and not counted. */
 const IN_FLIGHT = new Set([STATUS.held, STATUS.awaitingPayment]);
+
+/**
+ * How we recognise the same person across two attempts at the same sitting.
+ *
+ * Names are unreliable — the live diary has one guest booking as both "Jacqui
+ * Halliday" and "Bridget Halliday" on the same email, and another as "Martyn
+ * tuttey" and "Martyn Tuttey". Email and phone are what actually identify them.
+ */
+export function contactKeys(booking) {
+  const keys = [];
+  if (booking.email) keys.push(`e:${booking.email.trim().toLowerCase()}`);
+  if (booking.phone) {
+    const digits = booking.phone.replace(/\D/g, '');
+    // +447961705118 and 07961705118 are the same phone; the last nine digits
+    // are the part that doesn't move.
+    if (digits.length >= 9) keys.push(`p:${digits.slice(-9)}`);
+  }
+  return keys;
+}
+
+/** Attempts that shouldn't take up room on the diary. */
+export function isHidden(booking) {
+  return booking.disposition === DISPOSITION.superseded
+    || booking.disposition === DISPOSITION.stale;
+}
 
 export function holdsASeat(booking) {
   return LIVE.has(booking.status);

@@ -18,7 +18,7 @@ export function monthView({ month, weeks, summary, today }) {
     <div class="stat"><b>${summary.covers}</b><span>Guests booked</span></div>
     <div class="stat"><b>${summary.sittings}</b><span>Sittings with bookings</span></div>
     <div class="stat"><b>${summary.occupancy == null ? '—' : `${summary.occupancy}%`}</b><span>Of seats offered</span></div>
-    <div class="stat${summary.pending ? ' flag' : ''}"><b>${summary.pending}</b><span>Mid-checkout, unpaid</span></div>
+    <div class="stat${summary.abandoned ? ' flag' : ''}"><b>${summary.abandoned}</b><span>Abandoned, worth chasing</span></div>
     <div class="stat"><b>${summary.toSettle}</b><span>To settle on arrival</span></div>
   </div>`;
 
@@ -40,7 +40,8 @@ export function monthView({ month, weeks, summary, today }) {
       // sitting we opened, which is not what happened; show what is pending.
       if (sitting.covers === 0) {
         pillClass.push('pending');
-        const waiting = sitting.pending ? `${sitting.pending} pending` : 'none held';
+        const waiting = sitting.abandoned ? `${sitting.abandoned} lost`
+          : sitting.inProgress ? `${sitting.inProgress} in checkout` : 'nothing held';
         return `<span class="${pillClass.join(' ')}">${escape(sitting.time)} <b>${escape(waiting)}</b></span>`;
       }
 
@@ -49,7 +50,7 @@ export function monthView({ month, weeks, summary, today }) {
       // from a sitting that is merely sold out.
       if (sitting.capacity != null && sitting.covers > sitting.capacity) pillClass.push('over');
       else if (full) pillClass.push('full');
-      else if (sitting.pending) pillClass.push('unpaid');
+      else if (sitting.abandoned) pillClass.push('unpaid');
       const of = sitting.capacity != null ? `/${sitting.capacity}` : '';
       return `<span class="${pillClass.join(' ')}">${escape(sitting.time)} <b>${sitting.covers}${of}</b></span>`;
     }).join('');

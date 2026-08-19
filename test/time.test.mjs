@@ -79,7 +79,7 @@ is('grid covers all days', weeks.flat().filter(c => !c.outside).length, 31);
 is('Aug 2026 needs 6 rows', weeks.length, 6);
 const cell28 = weeks.flat().find(c => c.date === '2026-08-28');
 is('cell 28 covers', cell28.covers, 9);
-is('cell 28 counts pending guests', cell28.pending, 2);
+is('cell 28 counts in-checkout guests', cell28.inProgress, 2);
 
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);

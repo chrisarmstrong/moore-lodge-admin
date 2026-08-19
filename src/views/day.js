@@ -1,6 +1,6 @@
 import { page, escape } from './layout.js';
 import { dateLabel, shiftDate, localDate, localMonth } from '../time.js';
-import { statusLabel, paymentLabel, isInFlight, PAYMENT, STATUS } from '../domain.js';
+import { statusLabel, paymentLabel, PAYMENT, STATUS, DISPOSITION } from '../domain.js';
 
 export function dayView({ date, sittings }) {
   const previous = shiftDate(date, -1);
@@ -38,6 +38,7 @@ export function dayView({ date, sittings }) {
         <span class="count${over ? ' over' : full ? ' full' : ''}">${sitting.covers}${escape(of)} guests${over ? ' &middot; over capacity' : ''}</span>
       </h2>
       ${sitting.bookings.map(bookingRow).join('')}
+      ${sitting.hidden ? `<p class="swallowed">${sitting.hidden} expired ${sitting.hidden === 1 ? 'attempt' : 'attempts'} not shown — retried successfully, or never named.</p>` : ''}
     </section>`;
   }).join('');
 
@@ -51,12 +52,22 @@ export function dayView({ date, sittings }) {
 }
 
 function bookingRow(booking) {
+  const abandoned = booking.disposition === DISPOSITION.abandoned;
+  const inProgress = booking.disposition === DISPOSITION.inProgress;
+
   const tags = [];
-  if (booking.status !== STATUS.confirmed) {
-    tags.push(`<span class="tag${isInFlight(booking) ? ' warn' : ''}">${escape(statusLabel(booking.status))}</span>`);
+  if (abandoned) tags.push('<span class="tag warn">Abandoned &middot; chase</span>');
+  else if (inProgress) tags.push('<span class="tag">In checkout now</span>');
+  else if (booking.status !== STATUS.confirmed) {
+    tags.push(`<span class="tag">${escape(statusLabel(booking.status))}</span>`);
   }
-  if (booking.payment === PAYMENT.paid) tags.push('<span class="tag ok">Paid</span>');
-  else tags.push(`<span class="tag warn">${escape(paymentLabel(booking.payment))}</span>`);
+
+  // An abandoned attempt was never paid for by definition; saying so twice adds
+  // nothing next to the label that already explains it.
+  if (!abandoned && !inProgress) {
+    if (booking.payment === PAYMENT.paid) tags.push('<span class="tag ok">Paid</span>');
+    else tags.push(`<span class="tag warn">${escape(paymentLabel(booking.payment))}</span>`);
+  }
   if (booking.source !== 'online') tags.push(`<span class="tag">${escape(booking.source)}</span>`);
 
   const contact = [];
@@ -73,7 +84,7 @@ function bookingRow(booking) {
     ? `<p class="note"><b>Note to team:</b> ${escape(booking.teamMessage)}</p>`
     : '';
 
-  return `<div class="booking${isInFlight(booking) ? ' dim' : ''}">
+  return `<div class="booking${inProgress ? ' dim' : ''}${abandoned ? ' chase' : ''}">
     <div class="party">${booking.partySize}</div>
     <div class="who">${escape(booking.guestName)}</div>
     <div class="meta">${contact.join('')}${tags.join('')}</div>

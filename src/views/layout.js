@@ -132,6 +132,8 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .booking .note{grid-column:2;font-size:.83rem;background:var(--warn-wash);border-left:2px solid var(--warn);padding:.35rem .55rem;margin-top:.35rem}
 .booking .note b{font-weight:400;color:var(--warn)}
 .booking.dim{opacity:.55}
+.booking.chase{background:var(--warn-wash)}
+.swallowed{margin:0;padding:.6rem 1rem;font-size:.76rem;color:var(--muted);border-top:1px dashed var(--rule)}
 
 .tag{font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--rule-strong);padding:.1rem .35rem;white-space:nowrap}
 .tag.warn{color:var(--warn);border-color:var(--warn)}

@@ -162,6 +162,7 @@ function toBooking(reservation, labels) {
       })),
     teamMessage: reservation.teamMessage || null,
     experienceId: details.experienceId || null,
+    createdAt: new Date(reservation.createdDate),
     status: STATUS_FROM_WIX[reservation.status] || reservation.status,
     payment: PAYMENT_FROM_WIX[reservation.paymentStatus] || PAYMENT.unpaid,
     source: SOURCE_FROM_WIX[reservation.source] || 'online',

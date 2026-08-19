@@ -8,14 +8,57 @@
  */
 
 import { localDate, localTime, datesInMonth, weekdayIndex } from './time.js';
-import { holdsASeat, isInFlight, isDead, PAYMENT } from './domain.js';
+import {
+  holdsASeat, isInFlight, isDead, isHidden, contactKeys,
+  PAYMENT, DISPOSITION, HOLD_MINUTES,
+} from './domain.js';
+
+/**
+ * Works out what each unfinished attempt in a sitting really is.
+ *
+ * A guest who abandons the payment step and then books again successfully
+ * leaves two records behind. Wix keeps both, so the diary shows the same person
+ * twice and the "unpaid" count doubles. Worse, a held reservation from last
+ * week still says `HELD`, as though somebody were choosing a table right now.
+ *
+ * Two questions sort it out. Is the attempt still within its ten-minute life?
+ * And did the same person go on to book this sitting successfully?
+ */
+function classify(bookings, now) {
+  const settled = new Set();
+  for (const booking of bookings) {
+    if (holdsASeat(booking)) for (const key of contactKeys(booking)) settled.add(key);
+  }
+
+  for (const booking of bookings) {
+    if (holdsASeat(booking)) {
+      booking.disposition = DISPOSITION.live;
+      continue;
+    }
+
+    // No usable creation date means we cannot tell a live checkout from a dead
+    // one. Err towards showing it: a stray visible row is a much smaller
+    // problem than a booking quietly vanishing off the diary.
+    const age = now - booking.createdAt;
+    if (!Number.isFinite(age) || age < HOLD_MINUTES * 60_000) {
+      booking.disposition = DISPOSITION.inProgress;
+      continue;
+    }
+
+    const keys = contactKeys(booking);
+    if (keys.some((key) => settled.has(key))) booking.disposition = DISPOSITION.superseded;
+    else if (keys.length === 0) booking.disposition = DISPOSITION.stale;
+    else booking.disposition = DISPOSITION.abandoned;
+  }
+}
 
 /**
  * @param {import('./domain.js').Booking[]} bookings
  * @param {Map<string, import('./domain.js').Experience>} experiences
+ * @param {Date} [now] Injected so the classification can be tested.
  * @returns {Map<string, import('./domain.js').Sitting[]>} keyed by local date
  */
-export function groupIntoSittings(bookings, experiences) {
+export function groupIntoSittings(bookings, experiences, now = new Date()) {
   const byDate = new Map();
 
   for (const booking of bookings) {
@@ -34,7 +77,9 @@ export function groupIntoSittings(bookings, experiences) {
         covers: 0,
         capacity: null,
         toSettle: 0,
-        pending: 0,
+        inProgress: 0,
+        abandoned: 0,
+        hidden: 0,
       });
     }
     sittings.get(key).bookings.push(booking);
@@ -46,18 +91,29 @@ export function groupIntoSittings(bookings, experiences) {
     for (const sitting of list) {
       sitting.experience = dominantExperience(sitting.bookings, experiences);
       sitting.capacity = sitting.experience?.seatsPerSitting ?? null;
+
+      classify(sitting.bookings, now);
+
       for (const booking of sitting.bookings) {
-        if (holdsASeat(booking)) {
+        if (booking.disposition === DISPOSITION.live) {
           sitting.covers += booking.partySize;
           // A phone booking is unpaid by design — it settles on arrival, the
           // way it always has. Counting those as a problem would flag most of
-          // the diary and train everyone to ignore the number. What is worth
-          // flagging is a guest who is mid-checkout and hasn't paid.
+          // the diary and train everyone to ignore the number.
           if (booking.payment === PAYMENT.unpaid) sitting.toSettle += booking.partySize;
-        } else if (isInFlight(booking)) {
-          sitting.pending += booking.partySize;
+        } else if (booking.disposition === DISPOSITION.inProgress) {
+          sitting.inProgress += booking.partySize;
+        } else if (booking.disposition === DISPOSITION.abandoned) {
+          sitting.abandoned += booking.partySize;
+        } else {
+          sitting.hidden += 1;
         }
       }
+
+      // Superseded and stale attempts stay out of the diary entirely. They are
+      // counted above so the day can say how many it swallowed, rather than
+      // quietly losing records.
+      sitting.bookings = sitting.bookings.filter((booking) => !isHidden(booking));
     }
     result.set(date, list);
   }
@@ -101,7 +157,8 @@ export function monthGrid(isoMonth, sittingsByDate) {
       outside: false,
       sittings,
       covers: sittings.reduce((total, sitting) => total + sitting.covers, 0),
-      pending: sittings.reduce((total, sitting) => total + sitting.pending, 0),
+      abandoned: sittings.reduce((total, sitting) => total + sitting.abandoned, 0),
+      inProgress: sittings.reduce((total, sitting) => total + sitting.inProgress, 0),
       toSettle: sittings.reduce((total, sitting) => total + sitting.toSettle, 0),
     });
   }
@@ -118,7 +175,9 @@ export function monthSummary(sittingsByDate) {
   let sittings = 0;
   let covers = 0;
   let toSettle = 0;
-  let pending = 0;
+  let abandoned = 0;
+  let inProgress = 0;
+  let hidden = 0;
   let seatsOffered = 0;
 
   for (const list of sittingsByDate.values()) {
@@ -126,7 +185,9 @@ export function monthSummary(sittingsByDate) {
       sittings += 1;
       covers += sitting.covers;
       toSettle += sitting.toSettle;
-      pending += sitting.pending;
+      abandoned += sitting.abandoned;
+      inProgress += sitting.inProgress;
+      hidden += sitting.hidden;
       if (sitting.capacity != null) seatsOffered += sitting.capacity;
     }
   }
@@ -135,7 +196,9 @@ export function monthSummary(sittingsByDate) {
     sittings,
     covers,
     toSettle,
-    pending,
+    abandoned,
+    inProgress,
+    hidden,
     seatsOffered,
     occupancy: seatsOffered ? Math.round((covers / seatsOffered) * 100) : null,
   };
