@@ -101,6 +101,22 @@ console.log('--- the ways a booking must not be changeable ---');
   is('a bad Access assertion never reaches the action', noAuth.status, 403);
 }
 
+console.log('--- what somebody who is not signed in is told ---');
+{
+  const page = await worker.fetch(new Request(`${ORIGIN}/day/2026-08-06`), env, ctx);
+  const body = await page.text();
+  is('turned away', page.status, 403);
+  is('and pointed at the address that signs them in', body.includes('samson.moorelodge.co.uk'), true);
+  // The reason stays, but it is not the sentence they are asked to act on.
+  is('the machine reason is demoted, not dropped', body.includes('class="sub"'), true);
+
+  const unset = await worker.fetch(new Request(`${ORIGIN}/day/2026-08-06`),
+    { ...env, ACCESS_AUD: 'REPLACE-ME' }, ctx);
+  const setup = await unset.text();
+  is('a misconfigured Worker says so outright', setup.includes('not configured'), true);
+  is('and does not send anyone off to sign in', setup.includes('brought straight here'), false);
+}
+
 console.log('--- where it sends you afterwards ---');
 {
   const away = await post(`/booking/${ID}/paid`, { back:'https://evil.example/steal' });

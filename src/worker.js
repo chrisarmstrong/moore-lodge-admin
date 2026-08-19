@@ -21,6 +21,9 @@ import {
   localDate, localMonth, monthWindow, dayWindow, isValidMonth, isValidDate,
 } from './time.js';
 
+/** Where a staff member is actually meant to arrive. */
+const SAMSON = 'https://samson.moorelodge.co.uk';
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -289,13 +292,27 @@ function redirect(location) {
   return new Response(null, { status: 302, headers: { location, 'cache-control': 'no-store' } });
 }
 
+/**
+ * Two different people read this page.
+ *
+ * A misconfigured Worker is for whoever is deploying it, and the reason is the
+ * whole message. Everything else is a member of staff who has arrived somewhere
+ * they did not mean to — usually the origin directly, bypassing the address
+ * that would have signed them in — and "no Access assertion on request" tells
+ * them nothing they can act on. It stays on the page, quietly, because it is
+ * still the first thing worth knowing when something is wrong.
+ */
 function denied(error) {
-  return html(page({
-    title: 'Not signed in',
-    heading: 'Not signed in',
-    body: `<div class="error"><p>${escape(error.message)}.</p>
-      <p>Samson sits behind Cloudflare Access. Open it at its own address and sign in with your Moore Lodge email.</p></div>`,
-  }), 403);
+  const misconfigured = /is not configured|placeholder/.test(error.message);
+
+  const body = misconfigured
+    ? `<div class="error"><p>Samson is not configured: ${escape(error.message)}.</p>
+        <p>Set it in <code>wrangler.jsonc</code> and deploy again.</p></div>`
+    : `<div class="error"><p>Sign in at <a href="${SAMSON}">${SAMSON.replace('https://', '')}</a>
+        and you will be brought straight here.</p>
+        <p class="sub">This address does not sign anyone in on its own — ${escape(error.message)}.</p></div>`;
+
+  return html(page({ title: 'Not signed in', heading: 'Not signed in', body }), 403);
 }
 
 function badRequest(message) {

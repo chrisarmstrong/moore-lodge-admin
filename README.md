@@ -176,6 +176,42 @@ address that is not on the domain does not have to be shut out to get there.
 It does nothing for the link preview. Access still challenges at the edge, and
 an unfurler still arrives without a cookie whichever provider is behind it.
 
+### Making the sign-in look like Samson
+
+A stark Cloudflare page in front of a carefully made app reads as the wrong
+place, or as something worth being suspicious of. Two settings fix most of it.
+
+**Brand the page.** Zero Trust → Settings → Custom Pages carries a logo, a
+background and header text for the login screen. The values are Samson's own:
+cream `#F7F4EC` for the ground and burgundy `#521033` for the type, with the
+stacked lockup in burgundy.
+
+**The logo cannot live here.** A logo served from `samson.moorelodge.co.uk` is a
+logo behind the Access application somebody is in the middle of signing in to,
+so the login page asks for it, gets challenged, and shows nothing. It has to be
+somewhere public — `moorelodge.co.uk` is the obvious home.
+
+**One provider means one tap.** Access shows a "how would you like to sign in"
+chooser only when more than one login method is enabled. With Google as the only
+method it redirects straight through, so the whole journey is: tap Samson, pass
+through a branded page, land on Google's account picker, arrive. Signed in to
+Google already and it is closer to no taps at all. Turning off one-time PIN is
+what buys this, which is a second reason to do it beyond the one above.
+
+**The account picker is Google's.** Nothing on any plan changes that — AuthKit
+would bounce to the same screen. Branding stops at the edges of it.
+
+**Session length is the real lever.** The screen nobody sees is the best-looking
+one. The application's session duration decides how often staff meet any of
+this; a phone in an apron pocket signing in once a month is a different product
+from one signing in every morning.
+
+**On an installed phone, expiry is not free.** Signing in means leaving our
+origin, and a standalone home-screen app sent cross-origin can hand the journey
+to a browser sheet rather than keeping it in the app. It resolves, but it does
+not feel like the app did a moment earlier — another argument for a long
+session, and worth watching on a real handset after any change here.
+
 Access authenticates at the edge; `src/access.js` verifies the assertion again
 inside the Worker, because anyone reaching the origin directly would otherwise
 bypass the edge entirely.
