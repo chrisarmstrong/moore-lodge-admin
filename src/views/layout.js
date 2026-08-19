@@ -46,7 +46,7 @@ export function page(opts) {
  * be on screen in a few tens of milliseconds while the diary itself is still
  * being fetched. Only the part that needs data waits.
  */
-export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev' }) {
+export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev', flash = null }) {
   return `<!doctype html>
 <html lang="en-GB">
 <head>
@@ -91,6 +91,7 @@ ${IOS_SPLASH}
   <span class="estate">Moore Lodge</span>
 </header>
 <p class="stale" id="stale" hidden></p>
+${flash ? `<p class="flash${flash.ok ? '' : ' bad'}" role="status">${escape(flash.text)}</p>` : ''}
 <main id="main">
   ${titlebar || `<div class="head"><h1>${escape(heading)}</h1>${sub ? `<p class="sub">${escape(sub)}</p>` : ''}</div>`}
   ${nav}`;
@@ -287,6 +288,38 @@ main{
 }
 .subnav span{color:var(--muted)}
 
+.flash{
+  margin:0;padding:.75rem max(1rem,var(--left));
+  background:var(--full);color:var(--ground);font-size:.85rem;text-align:center;
+}
+.flash.bad{background:var(--warn)}
+
+.actions{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.6rem}
+.actions form{margin:0}
+.act{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:44px;padding:0 .85rem;
+  font-family:var(--body);font-size:.85rem;color:var(--accent);
+  background:var(--surface);border:1px solid var(--rule);border-radius:2px;
+  cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+}
+.act:active{background:var(--press)}
+.act.grave{color:var(--warn);border-color:var(--warn)}
+
+/* Anything with consequences asks once more, without a script and without a
+   dialog that a stray tap can dismiss into doing the thing anyway. */
+.ask{display:inline-block}
+.ask > summary{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:44px;padding:0 .85rem;list-style:none;cursor:pointer;
+  font-size:.85rem;color:var(--warn);border:1px solid var(--warn);border-radius:2px;
+  touch-action:manipulation;
+}
+.ask > summary::-webkit-details-marker{display:none}
+.ask[open]{display:block;width:100%;border:1px solid var(--warn);background:var(--warn-wash);padding:.6rem}
+.ask[open] > summary{border:0;padding:0;min-height:0;margin-bottom:.4rem;font-weight:400}
+.ask p{margin:0 0 .6rem;font-size:.85rem;color:var(--ink)}
+
 .head{padding:1.5rem 0 1rem}
 h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem);margin:0;line-height:1.15}
 .sub{margin:.35rem 0 0;color:var(--muted);font-size:.9rem}
@@ -331,6 +364,7 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   text-decoration:none;font-size:.9rem;border-radius:2px;touch-action:manipulation;
 }
 .cue:active{background:var(--press)}
+.cue-sub{color:var(--muted);font-size:.82rem;white-space:nowrap}
 @media(max-width:560px){
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   /* An odd number of tiles used to leave a dead grey box on the end. */
@@ -368,10 +402,12 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
    to — sold out, oversold — without a second row of marks. */
 .compact{display:none}
 .covers{
-  display:inline-flex;align-items:center;justify-content:center;
-  min-width:1.7rem;height:1.7rem;padding:0 .3rem;border-radius:999px;
+  display:flex;align-items:center;justify-content:center;
+  /* As wide as the cell allows, inside the same padding the date sits in. */
+  width:100%;aspect-ratio:1;border-radius:50%;
   background:var(--accent);color:var(--ground);
-  font-family:var(--body);font-size:.82rem;font-variant-numeric:tabular-nums;line-height:1;
+  font-family:var(--body);font-size:clamp(.85rem,3.6vw,1.1rem);
+  font-variant-numeric:tabular-nums;line-height:1;
 }
 .covers.full{background:var(--full)}
 .covers.over{background:var(--warn)}
@@ -381,7 +417,7 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   .cell{min-height:3.6rem;padding:.35rem;display:flex;flex-direction:column;align-items:center;gap:.2rem}
   .cell .n{align-self:flex-start}
   .pill{display:none}
-  .compact{display:flex}
+  .compact{display:flex;width:100%;padding:0 .1rem}
 }
 
 .sitting{border:1px solid var(--rule);background:var(--surface);margin-bottom:1rem}

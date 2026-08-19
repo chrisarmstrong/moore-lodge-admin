@@ -43,7 +43,7 @@ export function listShell({ kind, period }) {
   return { title: `${title} · ${label}`, heading: title, titlebar, nav: '' };
 }
 
-export function listBody({ kind, sittings }) {
+export function listBody({ kind, sittings, back = '/' }) {
   const { keep, blurb, empty } = KINDS[kind];
 
   const groups = [];
@@ -65,6 +65,6 @@ export function listBody({ kind, sittings }) {
         <span>${escape(dateLabel(localDate(sitting.startsAt)))}</span>
         <span class="count">${escape(localTime(sitting.startsAt))}</span>
       </h2>
-      ${matched.map(bookingRow).join('')}
+      ${matched.map((booking) => bookingRow(booking, back)).join('')}
     </section>`).join('')}`;
 }

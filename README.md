@@ -18,6 +18,7 @@ never take the other down.
 | `/settle/PERIOD` | Who still owes money, for a day or a month |
 | `/chase/PERIOD` | Who abandoned a booking and left a way to reach them |
 | `/today` | Redirects to today — what the home-screen shortcut points at |
+| `POST /booking/:id/:action` | Mark paid, seated, finished, no show, or cancel |
 | `/whoami` | Who Cloudflare Access thinks you are. Handy while setting it up |
 
 ## The seam
@@ -141,6 +142,37 @@ confirms the whole chain end to end.
 Access authenticates at the edge; `src/access.js` verifies the assertion again
 inside the Worker, because anyone reaching the origin directly would otherwise
 bypass the edge entirely.
+
+## Changing a booking
+
+`src/actions.js` holds every write Samson can make. Three things about it:
+
+**Wix sends the emails.** Updating a reservation can fire the site's own
+automations, so a cancellation may tell the guest. Destructive actions say so
+before they are confirmed, behind a second tap rather than a dialog a pocket can
+dismiss.
+
+**"Paid" is a flag, not money.** Wix sets `PAID` when the matching eCommerce
+order settles. Marking it by hand records that cash changed hands in the room —
+it takes no payment and reconciles against nothing. That is the right tool for a
+phone booking settled on the day and the wrong one for anything else.
+
+**The revision is read immediately before writing**, never taken from the page
+the button was on. That page may be an hour old, and Wix rejects a stale
+revision — rightly, since somebody else may have touched the booking since.
+
+Actions only appear on bookings that hold a seat. An attempt still in checkout,
+or one abandoned last week, shows its contact details and nothing else; offering
+"mark paid" there invites recording a payment against a booking nobody made.
+
+### Why the origin is checked
+
+Access authenticates with a cookie, and a cookie rides along on a cross-site
+form post exactly as it does on our own. The assertion alone would let any page
+on the internet cancel a booking on a signed-in phone. `act()` in
+`src/worker.js` refuses anything whose `Origin` isn't ours before it reads or
+writes a thing, and `test/worker.test.mjs` drives that with a real assertion and
+a real form post.
 
 ## Things learned from the live API
 

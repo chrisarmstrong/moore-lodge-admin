@@ -66,7 +66,8 @@ is('first sitting is 12:30 local', day[0].time, '12:30');
 is('covers exclude in-flight and cancelled', day[0].covers, 6);
 is('in-flight booking still listed', day[0].bookings.length, 3);
 is('capacity from experience', day[0].capacity, 15);
-is('unpaid covers counted', day[0].toSettle, 2);
+is('unpaid counted as one group', day[0].toSettle, 1);
+is('with its guests carried alongside', day[0].toSettleGuests, 2);
 
 const summary = monthSummary(byDate);
 is('month covers', summary.covers, 9);

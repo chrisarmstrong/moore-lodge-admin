@@ -76,9 +76,11 @@ export function groupIntoSittings(bookings, experiences, now = new Date()) {
         bookings: [],
         covers: 0,
         capacity: null,
-        toSettle: 0,
+        toSettle: 0,        // groups, not heads — one bill each
+        toSettleGuests: 0,
         inProgress: 0,
-        abandoned: 0,
+        abandoned: 0,       // groups again: one phone call each
+        abandonedGuests: 0,
         hidden: 0,
       });
     }
@@ -100,11 +102,18 @@ export function groupIntoSittings(bookings, experiences, now = new Date()) {
           // A phone booking is unpaid by design — it settles on arrival, the
           // way it always has. Counting those as a problem would flag most of
           // the diary and train everyone to ignore the number.
-          if (booking.payment === PAYMENT.unpaid) sitting.toSettle += booking.partySize;
+          if (booking.payment === PAYMENT.unpaid) {
+            // A party settles one bill between them, so what front of house
+            // needs to know is how many bills — not how many mouths.
+            sitting.toSettle += 1;
+            sitting.toSettleGuests += booking.partySize;
+          }
         } else if (booking.disposition === DISPOSITION.inProgress) {
           sitting.inProgress += booking.partySize;
         } else if (booking.disposition === DISPOSITION.abandoned) {
-          sitting.abandoned += booking.partySize;
+          // Likewise one phone call each, whatever the party size.
+          sitting.abandoned += 1;
+          sitting.abandonedGuests += booking.partySize;
         } else {
           sitting.hidden += 1;
         }
@@ -160,6 +169,7 @@ export function monthGrid(isoMonth, sittingsByDate) {
       abandoned: sittings.reduce((total, sitting) => total + sitting.abandoned, 0),
       inProgress: sittings.reduce((total, sitting) => total + sitting.inProgress, 0),
       toSettle: sittings.reduce((total, sitting) => total + sitting.toSettle, 0),
+      toSettleGuests: sittings.reduce((total, sitting) => total + sitting.toSettleGuests, 0),
     });
   }
 
@@ -175,7 +185,9 @@ export function monthSummary(sittingsByDate) {
   let sittings = 0;
   let covers = 0;
   let toSettle = 0;
+  let toSettleGuests = 0;
   let abandoned = 0;
+  let abandonedGuests = 0;
   let inProgress = 0;
   let hidden = 0;
   let seatsOffered = 0;
@@ -185,7 +197,9 @@ export function monthSummary(sittingsByDate) {
       sittings += 1;
       covers += sitting.covers;
       toSettle += sitting.toSettle;
+      toSettleGuests += sitting.toSettleGuests;
       abandoned += sitting.abandoned;
+      abandonedGuests += sitting.abandonedGuests;
       inProgress += sitting.inProgress;
       hidden += sitting.hidden;
       if (sitting.capacity != null) seatsOffered += sitting.capacity;
@@ -196,7 +210,9 @@ export function monthSummary(sittingsByDate) {
     sittings,
     covers,
     toSettle,
+    toSettleGuests,
     abandoned,
+    abandonedGuests,
     inProgress,
     hidden,
     seatsOffered,

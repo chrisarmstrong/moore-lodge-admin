@@ -9,6 +9,7 @@ import { WixClient } from '../wix.js';
 import { STATUS, PAYMENT } from '../domain.js';
 
 const RESERVATIONS_QUERY = '/table-reservations/reservations/v1/reservations/query';
+const RESERVATION = '/table-reservations/reservations/v1/reservations';
 const EXPERIENCES_QUERY = '/table-reservations/experiences/v1/experiences/query';
 const LOCATIONS_QUERY = '/table-reservations/reservation-locations/v1/reservation-locations/query';
 
@@ -94,6 +95,26 @@ export class WixBookings {
       .sort((a, b) => a.startsAt - b.startsAt || a.guestName.localeCompare(b.guestName));
   }
 
+  /**
+   * Applies a change to one reservation.
+   *
+   * The revision is read immediately beforehand rather than taken from the page
+   * the button was on: that page may have been rendered an hour ago, and Wix
+   * rejects a stale revision — correctly, since somebody else may have touched
+   * the booking since. Reading it fresh turns "your screen is out of date" into
+   * a non-event.
+   */
+  async apply(id, changes) {
+    const current = await this.wix.get(`${RESERVATION}/${encodeURIComponent(id)}?fieldsets=FULL`);
+    const reservation = current.reservation;
+    if (!reservation) throw new Error('That booking no longer exists.');
+
+    const updated = await this.wix.patch(`${RESERVATION}/${encodeURIComponent(id)}`, {
+      reservation: { id, revision: reservation.revision, ...changes },
+    });
+    return toBooking(updated.reservation || reservation, await this.fieldLabels());
+  }
+
   /** Experiences by id, so a sitting can show what it is and how full it is. */
   async experiences() {
     const experiences = await this.experienceRecords();
@@ -171,6 +192,7 @@ function toBooking(reservation, labels) {
         value: String(value).trim(),
       })),
     teamMessage: reservation.teamMessage || null,
+    revision: reservation.revision,
     experienceId: details.experienceId || null,
     createdAt: new Date(reservation.createdDate),
     status: STATUS_FROM_WIX[reservation.status] || reservation.status,

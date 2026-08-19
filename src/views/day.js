@@ -1,6 +1,7 @@
 import { escape } from './layout.js';
 import { dateLabel, shiftDate, localDate, localMonth } from '../time.js';
 import { statusLabel, paymentLabel, PAYMENT, STATUS, DISPOSITION } from '../domain.js';
+import { availableFor } from '../actions.js';
 
 /** The part of the day page that needs no data — flushed while Wix answers. */
 export function dayShell({ date }) {
@@ -28,15 +29,17 @@ export function dayShell({ date }) {
   return { title: dateLabel(date), heading: dateLabel(date), titlebar, nav };
 }
 
-export function dayBody({ date, sittings }) {
+export function dayBody({ date, sittings, back = `/day/${date}` }) {
   if (sittings.length === 0) return '<p class="empty">Nothing booked for this day.</p>';
 
   const totalCovers = sittings.reduce((total, sitting) => total + sitting.covers, 0);
   const toSettle = sittings.reduce((total, sitting) => total + sitting.toSettle, 0);
+  const toSettleGuests = sittings.reduce((total, sitting) => total + sitting.toSettleGuests, 0);
 
   const summary = `<p class="daysum">${totalCovers} ${totalCovers === 1 ? 'guest' : 'guests'} across
     ${sittings.length} ${sittings.length === 1 ? 'sitting' : 'sittings'}.</p>
-    ${toSettle ? `<a class="cue" href="/settle/${date}">${toSettle} to settle on arrival <span>&rsaquo;</span></a>` : ''}`;
+    ${toSettle ? `<a class="cue" href="/settle/${date}">${toSettle === 1 ? '1 group' : `${toSettle} groups`} to settle on arrival
+      <span class="cue-sub">${toSettleGuests} ${toSettleGuests === 1 ? 'guest' : 'guests'} &rsaquo;</span></a>` : ''}`;
 
   const body = sittings.map((sitting) => {
     const over = sitting.capacity != null && sitting.covers > sitting.capacity;
@@ -49,7 +52,7 @@ export function dayBody({ date, sittings }) {
         <span>${escape(sitting.time)} &middot; ${escape(name)}</span>
         <span class="count${over ? ' over' : full ? ' full' : ''}">${sitting.covers}${escape(of)} guests${over ? ' &middot; over capacity' : ''}</span>
       </h2>
-      ${sitting.bookings.map(bookingRow).join('')}
+      ${sitting.bookings.map((booking) => bookingRow(booking, back)).join('')}
       ${sitting.hidden ? `<p class="swallowed">${sitting.hidden} expired ${sitting.hidden === 1 ? 'attempt' : 'attempts'} not shown — retried successfully, or never named.</p>` : ''}
     </section>`;
   }).join('');
@@ -57,7 +60,7 @@ export function dayBody({ date, sittings }) {
   return summary + body;
 }
 
-export function bookingRow(booking) {
+export function bookingRow(booking, back = '/') {
   const abandoned = booking.disposition === DISPOSITION.abandoned;
   const inProgress = booking.disposition === DISPOSITION.inProgress;
 
@@ -95,9 +98,34 @@ export function bookingRow(booking) {
     <details class="reveal">
       <summary>${booking.phone || booking.email ? 'Contact details' : 'Reference'}</summary>
       <div class="contacts">${contact.join('')}</div>
+      ${actions(booking, back)}
     </details>
     ${notes}${teamMessage}
   </div>`;
+}
+
+/**
+ * Anything that changes a booking lives behind the same tap as the contact
+ * details, so a pocket cannot reach it, and anything with consequences asks
+ * once more before it happens.
+ */
+function actions(booking, back) {
+  const available = availableFor(booking);
+  if (available.length === 0) return '';
+
+  return `<div class="actions">${available.map((action) => {
+    const form = `<form method="post" action="/booking/${escape(booking.id)}/${escape(action.name)}">
+      <input type="hidden" name="back" value="${escape(back)}">
+      <button type="submit" class="act${action.confirm ? ' grave' : ''}">${escape(action.label)}</button>
+    </form>`;
+
+    if (!action.confirm) return form;
+    return `<details class="ask">
+      <summary>${escape(action.label)}</summary>
+      <p>${escape(action.confirm)}</p>
+      ${form}
+    </details>`;
+  }).join('')}</div>`;
 }
 
 function weekday(iso) {

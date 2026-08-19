@@ -30,8 +30,8 @@ export function monthBody({ month, weeks, summary, today }) {
     <div class="stat"><b>${summary.covers}</b><span>Guests booked</span></div>
     <div class="stat"><b>${summary.sittings}</b><span>Sittings with bookings</span></div>
     <div class="stat"><b>${summary.occupancy == null ? '—' : `${summary.occupancy}%`}</b><span>Of seats offered</span></div>
-    ${tile(`/chase/${month}`, summary.abandoned, 'Abandoned, worth chasing', summary.abandoned > 0)}
-    ${tile(`/settle/${month}`, summary.toSettle, 'To settle on arrival', false)}
+    ${tile(`/chase/${month}`, summary.abandoned, groups('Abandoned', summary.abandoned, summary.abandonedGuests), summary.abandoned > 0)}
+    ${tile(`/settle/${month}`, summary.toSettle, groups('To settle on arrival', summary.toSettle, summary.toSettleGuests), false)}
   </div>`;
 
   const header = WEEKDAY_INITIALS.map((initial) => `<div class="dow">${initial}</div>`).join('');
@@ -74,6 +74,12 @@ export function monthBody({ month, weeks, summary, today }) {
   return `${stats}
   <div class="grid">${header}${cells}</div>
   ${summary.sittings === 0 ? '<p class="empty">No bookings this month.</p>' : ''}`;
+}
+
+/** These count bookings, so the label says so and carries the head count too. */
+function groups(label, count, guests) {
+  if (!count) return label;
+  return `${label} · ${count === 1 ? '1 group' : `${count} groups`}, ${guests} ${guests === 1 ? 'guest' : 'guests'}`;
 }
 
 /** Colour carries what the row of dots used to say. */

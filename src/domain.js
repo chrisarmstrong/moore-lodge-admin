@@ -27,6 +27,7 @@
  * @property {Date}    createdAt     When the attempt was made — decides whether
  *                                   an unfinished one is live or long dead.
  * @property {string} [disposition]  Set by the calendar. See DISPOSITION.
+ * @property {string}  revision      Wix's optimistic-concurrency token.
  *
  * @typedef {object} Experience
  * @property {string}  id
@@ -58,6 +59,7 @@
  * @typedef {object} BookingsRepository
  * @property {(range: {start: Date, end: Date}) => Promise<Booking[]>} inRange
  * @property {() => Promise<Map<string, Experience>>} experiences
+ * @property {(id: string, changes: object) => Promise<Booking>} apply
  */
 
 /** Where a booking has got to. Mirrors what staff need to see, not Wix's enum. */

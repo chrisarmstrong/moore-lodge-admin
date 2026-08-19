@@ -117,7 +117,8 @@ is('two sittings on 6 Aug', aug6.length, 2);
 is('cancelled booking excluded entirely', aug6.flatMap(s => s.bookings).some(b => b.id.startsWith('073b9ffb')), false);
 is('12:30 sitting covers exclude in-flight', aug6[0].covers, 7);
 is('12:30 sitting still lists in-flight', aug6[0].bookings.length, 4);
-is('phone covers marked to settle', aug6[0].toSettle, 3);
+is('one unpaid booking is one bill', aug6[0].toSettle, 1);
+is('its three guests counted separately', aug6[0].toSettleGuests, 3);
 is('mid-checkout guests counted separately', aug6[0].inProgress, 4);
 is('13:30 sitting has mixed experience, dominant wins', aug6[1].experience.name, 'Afternoon Tea');
 is('13:30 covers include the no-experience booking', aug6[1].covers, 13);
@@ -176,12 +177,14 @@ is('genuinely abandoned still shown', names.includes('Lost Soul'), true);
 is('in-checkout still shown', names.includes('Live One'), true);
 is('successful bookings untouched', sit.bookings.filter(b => b.disposition === 'live').length, 2);
 is('three hidden: two duplicates and a nameless hold', sit.hidden, 3);
-is('abandoned counts guests, not bookings', sit.abandoned, 5);
+is('abandoned counts groups to ring', sit.abandoned, 1);
+is('and the guests behind them', sit.abandonedGuests, 5);
 is('in-progress counted apart', sit.inProgress, 2);
 is('covers unaffected by any of it', sit.covers, 5);
 
 const sum = monthSummary(grouped);
-is('month abandoned is only the lost one', sum.abandoned, 5);
+is('month abandoned is only the lost one', sum.abandoned, 1);
+is('month abandoned guests', sum.abandonedGuests, 5);
 is('month hidden tracked', sum.hidden, 3);
 
 const dayHtml = render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings:[sit] }));

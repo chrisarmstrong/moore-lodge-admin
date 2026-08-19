@@ -32,15 +32,27 @@ export class WixClient {
     this.inflight = new Map();
   }
 
+  async get(path) {
+    return this.send('GET', path);
+  }
+
+  async patch(path, body) {
+    return this.send('PATCH', path, body);
+  }
+
   async post(path, body) {
+    return this.send('POST', path, body);
+  }
+
+  async send(method, path, body) {
     const response = await fetch(`${BASE}${path}`, {
-      method: 'POST',
+      method,
       headers: {
         authorization: this.apiKey,
         'wix-site-id': this.siteId,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
 
     const text = await response.text();

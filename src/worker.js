@@ -16,6 +16,7 @@ import { monthShell, monthBody } from './views/month.js';
 import { dayShell, dayBody } from './views/day.js';
 import { listShell, listBody, KINDS } from './views/list.js';
 import { page, pageHead, pageTail, skeleton, RETIRE_SKELETON, escape } from './views/layout.js';
+import { ACTIONS } from './actions.js';
 import {
   localDate, localMonth, monthWindow, dayWindow, isValidMonth, isValidDate,
 } from './time.js';
@@ -43,6 +44,10 @@ export default {
     }
 
     try {
+      if (request.method === 'POST') return await act(request, url, env, staff);
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return html(page({ title: 'No', heading: 'No', body: '<p class="empty">That is not something Samson does.</p>' }), 405);
+      }
       return await route(url, env, staff, ctx);
     } catch (error) {
       console.error(error);
@@ -51,8 +56,61 @@ export default {
   },
 };
 
+/**
+ * The only path that changes anything.
+ *
+ * Access authenticates with a cookie, and a cookie is sent on a cross-site form
+ * post as readily as on our own — so the assertion alone would let another site
+ * cancel a booking on a signed-in phone. The origin check is what stops that,
+ * and it belongs before anything is read or written.
+ */
+async function act(request, url, env, staff) {
+  const origin = request.headers.get('origin');
+  if (origin && origin !== url.origin) return refused('That request came from somewhere else.');
+  if (!origin && request.headers.get('sec-fetch-site') !== 'same-origin') {
+    return refused('That request did not come from Samson.');
+  }
+
+  const match = url.pathname.match(/^\/booking\/([0-9a-f-]{36})\/(\w+)\/?$/i);
+  if (!match) return notFound();
+  const [, id, name] = match;
+  const action = ACTIONS[name];
+  if (!action) return notFound();
+
+  const form = await request.formData();
+  const back = safeReturn(form.get('back'), url);
+
+  try {
+    const bookings = new WixBookings(env);
+    await bookings.apply(id, action.changes);
+    // Until there is a database of our own to write to, the log is the audit
+    // trail: who did what, to which booking.
+    console.log(JSON.stringify({ action: name, booking: id, by: staff.email }));
+    return redirect(`${back}?done=${encodeURIComponent(action.done)}`);
+  } catch (error) {
+    console.error(error);
+    return redirect(`${back}?failed=${encodeURIComponent(error.message || 'That did not work.')}`);
+  }
+}
+
+/** What just happened, if anything, said back to whoever did it. */
+function readFlash(url) {
+  const done = url.searchParams.get('done');
+  if (done) return { ok: true, text: done.slice(0, 200) };
+  const failed = url.searchParams.get('failed');
+  if (failed) return { ok: false, text: failed.slice(0, 200) };
+  return null;
+}
+
+/** Only ever come back to a page of ours, never wherever a form field says. */
+function safeReturn(value, url) {
+  const candidate = typeof value === 'string' ? value : '';
+  return /^\/(day|calendar|settle|chase)\/[\w-]+$/.test(candidate) ? candidate : '/';
+}
+
 async function route(url, env, staff, ctx) {
   const bookings = new WixBookings(env, ctx);
+  const flash = readFlash(url);
 
   if (url.pathname === '/' || url.pathname === '') {
     return redirect(`/calendar/${localMonth()}`);
@@ -67,7 +125,7 @@ async function route(url, env, staff, ctx) {
     const month = monthMatch[1];
     if (!isValidMonth(month)) return badRequest('That is not a month.');
     const today = localDate();
-    return stream({ ...monthShell({ month, today }), version: buildVersion(env) }, 'month', async () => {
+    return stream({ ...monthShell({ month, today }), version: buildVersion(env), flash }, 'month', async () => {
       const { sittingsByDate } = await diary(bookings, monthWindow(month));
       return monthBody({
         month, weeks: monthGrid(month, sittingsByDate),
@@ -80,9 +138,9 @@ async function route(url, env, staff, ctx) {
   if (dayMatch) {
     const date = dayMatch[1];
     if (!isValidDate(date)) return badRequest('That is not a date.');
-    return stream({ ...dayShell({ date }), version: buildVersion(env) }, 'day', async () => {
+    return stream({ ...dayShell({ date }), version: buildVersion(env), flash }, 'day', async () => {
       const { sittingsByDate } = await diary(bookings, dayWindow(date));
-      return dayBody({ date, sittings: sittingsByDate.get(date) || [] });
+      return dayBody({ date, sittings: sittingsByDate.get(date) || [], back: `/day/${date}` });
     });
   }
 
@@ -92,11 +150,11 @@ async function route(url, env, staff, ctx) {
     const monthly = isValidMonth(period);
     if (!monthly && !isValidDate(period)) return badRequest('That is not a date.');
     if (!KINDS[kind]) return notFound();
-    return stream({ ...listShell({ kind, period }), version: buildVersion(env) }, 'day', async () => {
+    return stream({ ...listShell({ kind, period }), version: buildVersion(env), flash }, 'day', async () => {
       const window = monthly ? monthWindow(period) : dayWindow(period);
       const { sittingsByDate } = await diary(bookings, window);
       const sittings = [...sittingsByDate.values()].flat().sort((a, b) => a.startsAt - b.startsAt);
-      return listBody({ kind, sittings });
+      return listBody({ kind, sittings, back: `/${kind}/${period}` });
     });
   }
 
@@ -242,6 +300,14 @@ function denied(error) {
 
 function badRequest(message) {
   return html(page({ title: 'Not found', heading: 'Hmm', body: `<div class="error"><p>${escape(message)}</p></div>` }), 400);
+}
+
+function refused(message) {
+  return html(page({
+    title: 'Refused',
+    heading: 'Refused',
+    body: `<div class="error"><p>${escape(message)}</p></div>`,
+  }), 403);
 }
 
 function notFound() {
