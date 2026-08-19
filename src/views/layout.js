@@ -46,6 +46,9 @@ export function page(opts) {
  * be on screen in a few tens of milliseconds while the diary itself is still
  * being fetched. Only the part that needs data waits.
  */
+/** Absolute, because Open Graph will not take a relative image. */
+const SITE = 'https://samson.moorelodge.co.uk';
+
 export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev', flash = null, wide = false }) {
   return `<!doctype html>
 <html lang="en-GB">
@@ -56,6 +59,24 @@ export function pageHead({ title, heading, sub, nav = '', titlebar = '', version
 <meta name="color-scheme" content="light dark">
 
 <title>${escape(title)} · Samson</title>
+
+<!-- The card is deliberately the same on every page: the mark and the word.
+     An unfurl is cached at the moment somebody shares it, so a card naming a
+     date and its covers would be frozen at whatever the diary said then and
+     read as current — and it would put guest numbers in front of anyone who
+     came by the link. There is nothing here a stranger cannot already learn
+     from the hostname. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Samson">
+<meta property="og:title" content="Samson">
+<meta property="og:description" content="The Moore Lodge back office.">
+<meta property="og:url" content="${SITE}/">
+<meta property="og:image" content="${SITE}/icons/card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Samson">
+<meta name="twitter:card" content="summary_large_image">
 
 <!-- Painted before first paint, so the notch and home-bar bands match the page
      rather than flashing white on launch. -->

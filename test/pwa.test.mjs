@@ -123,6 +123,24 @@ for (const [name, vp] of [['iPhone SE (375px)', {width:375,height:667}], ['iPhon
   check('viewport-fit=cover for safe areas', head.viewportFit);
   check('fonts preloaded with crossorigin', head.preloads === 2, `${head.preloads}`);
 
+  const card = await page.evaluate(() => {
+    const get = (sel, attr = 'content') => document.querySelector(sel)?.getAttribute(attr);
+    return {
+      image: get('meta[property="og:image"]'),
+      title: get('meta[property="og:title"]'),
+      width: get('meta[property="og:image:width"]'),
+      height: get('meta[property="og:image:height"]'),
+      twitter: get('meta[name="twitter:card"]'),
+    };
+  });
+  check('link preview card declared', card.image?.startsWith('https://'), card.image || 'missing');
+  check('and sized, which some unfurlers need up front',
+    card.width === '1200' && card.height === '630', `${card.width}x${card.height}`);
+  check('large-image card for Twitter/Slack', card.twitter === 'summary_large_image', card.twitter);
+  // Fixed on purpose. A per-page title would be frozen at share time by every
+  // unfurler that caches, and would put covers in front of whoever holds the link.
+  check('the card says the same thing on every page', card.title === 'Samson', card.title);
+
   // The mark is an empty box, so under `align-items: baseline` it supplied the
   // flex baseline instead of the word next to it, and everything in the bar
   // lined up against the wrong thing. Measure the ink, not the CSS.
@@ -144,6 +162,15 @@ for (const [name, vp] of [['iPhone SE (375px)', {width:375,height:667}], ['iPhon
     m.icons.some(i=>i.sizes==='192x192') && m.icons.some(i=>i.sizes==='512x512'));
   check('manifest has a maskable icon', m.icons.some(i=>i.purpose==='maskable'));
   check('manifest shortcut to today', m.shortcuts?.[0]?.url === '/today');
+  // A card at the wrong size is dropped or letterboxed, and it fails silently.
+  const cardRes = await realFetch('http://localhost:8799/icons/card.png');
+  const bytes = new Uint8Array(await cardRes.arrayBuffer());
+  const view = new DataView(bytes.buffer);
+  check('card served as a png', cardRes.ok && cardRes.headers.get('content-type') === 'image/png');
+  // IHDR width and height are the two big-endian 32-bit words at offset 16.
+  check('card is really 1200x630', view.getUint32(16) === 1200 && view.getUint32(20) === 630,
+    `${view.getUint32(16)}x${view.getUint32(20)}`);
+
   for (const icon of m.icons) {
     const r = await realFetch(`http://localhost:8799${icon.src}`);
     check(`icon ${icon.src} served`, r.ok && r.headers.get('content-type')==='image/png');
