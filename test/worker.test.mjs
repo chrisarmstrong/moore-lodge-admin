@@ -33,8 +33,19 @@ let patched = null;
 // What the booking actually is when the write goes to apply itself, which is
 // not necessarily what the page that posted the form believed.
 let onDisk = { status: 'RESERVED' };
+let posted = null;
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
+  if (init.method === 'POST' && u.endsWith('/reservations') && !u.includes('/query')) {
+    posted = JSON.parse(init.body);
+    return { ok:true, status:200, text: async () => JSON.stringify({ reservation:{
+      id:ID, revision:'1', status:'RESERVED', paymentStatus:'NOT_PAID', source:'OFFLINE',
+      details:{ startDate:posted.reservation.details.startDate, partySize:posted.reservation.details.partySize },
+      reservee:posted.reservation.reservee, createdDate:'2026-08-01T00:00:00Z' } }) };
+  }
+  if (u.includes('reservation-locations')) {
+    return { ok:true, status:200, text: async () => JSON.stringify({ reservationLocations:[{ id:'loc-1', configuration:{} }] }) };
+  }
   if (u.includes('cloudflareaccess.com')) return { ok:true, status:200, json: async () => ({ keys:[jwk] }) };
   if (init.method === 'PATCH') {
     patched = JSON.parse(init.body);
@@ -147,6 +158,62 @@ console.log('--- the page decides what to offer; the route decides what to do --
   patched = null;
   await post(`/booking/${ID}/restore`);
   is('while restoring a live booking is refused', patched, null);
+}
+
+console.log('--- taking a booking over the phone ---');
+{
+  posted = null;
+  const body = new URLSearchParams({
+    date:'2026-08-06', time:'12:30', partySize:'4',
+    firstName:'Ann', lastName:'Blair', phone:'+447700900123', email:'ann@example.com', note:'window table',
+  });
+  const res = await worker.fetch(new Request(`${ORIGIN}/new`, {
+    method:'POST',
+    headers:{ 'content-type':'application/x-www-form-urlencoded', origin:ORIGIN,
+              'Cf-Access-Jwt-Assertion': await assertion() },
+    body,
+  }), env, ctx);
+
+  is('the reservation is offline, which is what a phone booking is', posted.reservation.source, 'OFFLINE');
+  is('half twelve in Ballymoney went up as 11:30Z', posted.reservation.details.startDate, '2026-08-06T11:30:00.000Z');
+  is('and ends two hours later by default', posted.reservation.details.endDate, '2026-08-06T13:30:00.000Z');
+  is('carries the location', posted.reservation.details.reservationLocationId, 'loc-1');
+  is('the party size', posted.reservation.details.partySize, 4);
+  is('the name and number the API insists on', [posted.reservation.reservee.firstName, posted.reservation.reservee.phone], ['Ann', '+447700900123']);
+  is('the note rides along', posted.reservation.teamMessage, 'window table');
+  // Status is left out on purpose: the location's approval setting decides
+  // between RESERVED and REQUESTED, and we should not assert one over it.
+  is('no status is asserted', 'status' in posted.reservation, false);
+  is('lands on the day it was booked for', res.headers.get('location').startsWith('/day/2026-08-06?done='), true);
+}
+
+console.log('--- a form with something wrong in it ---');
+{
+  posted = null;
+  const res = await worker.fetch(new Request(`${ORIGIN}/new`, {
+    method:'POST',
+    headers:{ 'content-type':'application/x-www-form-urlencoded', origin:ORIGIN,
+              'Cf-Access-Jwt-Assertion': await assertion() },
+    body:new URLSearchParams({ date:'2026-08-06', time:'12:30', partySize:'4', firstName:'Ann', phone:'' }),
+  }), env, ctx);
+  const page = await res.text();
+  is('nothing was written', posted, null);
+  is('and it says so on the form rather than redirecting', res.status, 422);
+  is('naming what is wrong', /phone number is needed/.test(page), true);
+  is('with the typing still in it', /value="Ann"/.test(page), true);
+}
+
+console.log('--- a booking form posted from somewhere else ---');
+{
+  posted = null;
+  const res = await worker.fetch(new Request(`${ORIGIN}/new`, {
+    method:'POST',
+    headers:{ 'content-type':'application/x-www-form-urlencoded', origin:'https://evil.example',
+              'Cf-Access-Jwt-Assertion': await assertion() },
+    body:new URLSearchParams({ date:'2026-08-06', time:'12:30', partySize:'4', firstName:'Ann', phone:'+447700900123' }),
+  }), env, ctx);
+  is('is refused', res.status, 403);
+  is('and books nothing', posted, null);
 }
 
 console.log('--- what somebody who is not signed in is told ---');

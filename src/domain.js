@@ -59,6 +59,17 @@
  *
  * @typedef {object} BookingsRepository
  * @property {(range: {start: Date, end: Date}) => Promise<Booking[]>} inRange
+ * @property {(draft: BookingDraft) => Promise<Booking>} create
+ *
+ * @typedef {object} BookingDraft
+ * @property {Date}    startsAt
+ * @property {number}  partySize
+ * @property {string}  firstName    Required by the API for anything but a walk-in.
+ * @property {?string} lastName
+ * @property {string}  phone        Likewise required — it is a phone booking.
+ * @property {?string} email
+ * @property {?string} experienceId
+ * @property {?string} teamMessage
  * @property {() => Promise<Map<string, Experience>>} experiences
  * @property {(id: string, changes: object) => Promise<Booking>} apply
  */

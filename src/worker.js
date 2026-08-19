@@ -15,6 +15,8 @@ import { groupIntoSittings, monthGrid, monthSummary } from './calendar.js';
 import { monthShell, monthBody } from './views/month.js';
 import { dayShell, dayBody } from './views/day.js';
 import { listShell, listBody, KINDS } from './views/list.js';
+import { newShell, newBody } from './views/new.js';
+import { readDraft } from './draft.js';
 import { page, pageHead, pageTail, skeleton, RETIRE_SKELETON, escape } from './views/layout.js';
 import { ACTIONS, permits } from './actions.js';
 import {
@@ -74,6 +76,8 @@ async function act(request, url, env, staff) {
     return refused('That request did not come from Samson.');
   }
 
+  if (url.pathname === '/new' || url.pathname === '/new/') return take(request, url, env, staff);
+
   const match = url.pathname.match(/^\/booking\/([0-9a-f-]{36})\/(\w+)\/?$/i);
   if (!match) return notFound();
   const [, id, name] = match;
@@ -104,6 +108,52 @@ function readFlash(url) {
   const failed = url.searchParams.get('failed');
   if (failed) return { ok: false, text: failed.slice(0, 200) };
   return null;
+}
+
+/**
+ * Writes a booking taken over the phone.
+ *
+ * A rejected form is re-rendered rather than redirected, which is the one place
+ * this app does not use post-redirect-get: the alternative is putting somebody's
+ * typing in a query string, and retyping a booking because one field was wrong
+ * is how a phone call goes badly. Nothing was written, so there is nothing for
+ * a refresh to repeat.
+ */
+async function take(request, url, env, staff) {
+  const bookings = new WixBookings(env);
+  const form = await request.formData();
+  const experiences = await bookings.experiences();
+  const { draft, errors, values } = readDraft(form, { experiences });
+  const date = isValidDate(values.date) ? values.date : localDate();
+
+  if (!draft) {
+    return html(page({
+      ...newShell({ date }),
+      version: buildVersion(env),
+      body: newBody({ date, experiences: offerable(experiences), values, errors }),
+    }), 422);
+  }
+
+  try {
+    const booking = await bookings.create(draft);
+    console.log(JSON.stringify({ action: 'create', booking: booking.id, by: staff.email }));
+    const day = localDate(booking.startsAt);
+    return redirect(`/day/${day}?done=${encodeURIComponent(`${booking.guestName} is in the diary.`)}`);
+  } catch (error) {
+    console.error(error);
+    // Wix refuses for reasons worth reading — a pacing conflict, a full
+    // sitting — so its words go on the form rather than a generic apology.
+    return html(page({
+      ...newShell({ date }),
+      version: buildVersion(env),
+      body: newBody({ date, experiences: offerable(experiences), values, errors: [error.message || 'Wix would not take that booking.'] }),
+    }), 502);
+  }
+}
+
+/** An archived or hidden experience is not something to sell down the phone. */
+function offerable(experiences) {
+  return [...experiences.values()].filter((experience) => experience.visible);
 }
 
 /** Only ever come back to a page of ours, never wherever a form field says. */
@@ -171,6 +221,20 @@ async function route(url, env, staff, ctx) {
       const { sittingsByDate } = await diary(bookings, window);
       const sittings = [...sittingsByDate.values()].flat().sort((a, b) => a.startsAt - b.startsAt);
       return listBody({ kind, period, sittings, back: `/${kind}/${period}` });
+    });
+  }
+
+  const newMatch = url.pathname.match(/^\/new(?:\/(\d{4}-\d{2}-\d{2}))?\/?$/);
+  if (newMatch) {
+    const date = newMatch[1] || localDate();
+    if (!isValidDate(date)) return badRequest('That is not a date.');
+    return stream({ ...newShell({ date }), version: buildVersion(env), flash }, 'day', async () => {
+      const [{ sittingsByDate }, experiences] = await Promise.all([
+        diary(bookings, dayWindow(date)),
+        bookings.experiences(),
+      ]);
+      const sittings = (sittingsByDate.get(date) || []).filter((sitting) => sitting.bookings.length > 0);
+      return newBody({ date, experiences: offerable(experiences), sittings });
     });
   }
 

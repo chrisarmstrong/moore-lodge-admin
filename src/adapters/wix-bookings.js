@@ -17,6 +17,9 @@ const LOCATIONS_QUERY = '/table-reservations/reservation-locations/v1/reservatio
 // somebody is looking at them, so they are never served from cache.
 const CONFIG_TTL = 600;
 
+/** When no experience says otherwise. A table is two hours. */
+const DEFAULT_MINUTES = 120;
+
 const STATUS_FROM_WIX = {
   HELD: STATUS.held,
   PAYMENT_INFORMATION_PENDING: STATUS.awaitingPayment,
@@ -104,6 +107,59 @@ export class WixBookings {
    * the booking since. Reading it fresh turns "your screen is out of date" into
    * a non-event.
    */
+  /** The location every reservation belongs to. One lodge, one location. */
+  async locationId() {
+    if (this.location) return this.location;
+    const locations = await this.wix.cachedQueryAll(LOCATIONS_QUERY, {}, 'reservationLocations',
+      { ttl: CONFIG_TTL, key: 'all', ctx: this.ctx });
+    const first = locations[0];
+    if (!first?.id) throw new Error('This site has no reservation location.');
+    this.location = first.id;
+    return this.location;
+  }
+
+  /**
+   * Writes a booking somebody took over the phone.
+   *
+   * `OFFLINE` is Wix's own word for it — "made by a restaurant employee, for
+   * example when a customer calls" — and it is why a phone number and a first
+   * name are not optional here: any source but `WALK_IN` is rejected without
+   * them. Status is left unset so Wix decides between RESERVED and REQUESTED
+   * by the location's own approval setting rather than us asserting one.
+   */
+  async create(draft) {
+    const [locationId, experiences] = await Promise.all([this.locationId(), this.experiences()]);
+    // experiences() is a Map keyed by id, not a list.
+    const experience = draft.experienceId ? experiences.get(draft.experienceId) || null : null;
+
+    const minutes = experience?.durationMins || DEFAULT_MINUTES;
+    const endsAt = new Date(draft.startsAt.getTime() + minutes * 60_000);
+
+    const created = await this.wix.post(RESERVATION, {
+      reservation: {
+        details: {
+          reservationLocationId: locationId,
+          ...(experience ? { experienceId: experience.id } : {}),
+          startDate: draft.startsAt.toISOString(),
+          endDate: endsAt.toISOString(),
+          partySize: draft.partySize,
+        },
+        reservee: {
+          firstName: draft.firstName,
+          ...(draft.lastName ? { lastName: draft.lastName } : {}),
+          phone: draft.phone,
+          ...(draft.email ? { email: draft.email } : {}),
+        },
+        source: 'OFFLINE',
+        ...(draft.teamMessage ? { teamMessage: draft.teamMessage } : {}),
+      },
+    });
+
+    const reservation = created.reservation;
+    if (!reservation) throw new Error('Wix accepted that but returned no booking.');
+    return toBooking(reservation, await this.fieldLabels());
+  }
+
   async apply(id, changes, allowed = null) {
     const current = await this.wix.get(`${RESERVATION}/${encodeURIComponent(id)}?fieldsets=FULL`);
     const reservation = current.reservation;

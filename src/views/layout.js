@@ -49,7 +49,7 @@ export function page(opts) {
 /** Absolute, because Open Graph will not take a relative image. */
 const SITE = 'https://samson.moorelodge.co.uk';
 
-export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev', flash = null, wide = false, split = false }) {
+export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev', flash = null, wide = false, split = false, add = null }) {
   return `<!doctype html>
 <html lang="en-GB">
 <head>
@@ -109,6 +109,9 @@ ${IOS_SPLASH}
 <a class="skip" href="#main">Skip to content</a>
 <header class="bar">
   <a class="wordmark" href="/"><i class="mark" aria-hidden="true"></i>Samson</a>
+  <a class="add" href="${add ? `/new/${escape(add)}` : '/new'}" aria-label="Take a booking over the phone">
+    <span aria-hidden="true">+</span><span class="addword">Booking</span>
+  </a>
 </header>
 <p class="stale" id="stale" hidden></p>
 ${flash ? `<p class="flash${flash.ok ? '' : ' bad'}" role="status">${escape(flash.text)}</p>` : ''}
@@ -336,6 +339,7 @@ main.wide{max-width:60rem}
   font-family:var(--body);font-size:.85rem;color:var(--accent);
   background:var(--surface);border:1px solid var(--rule);border-radius:2px;
   cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+  text-decoration:none;  /* .act is worn by buttons and by links; only one of them underlines */
 }
 .act:active{background:var(--press)}
 .act.grave{color:var(--warn);border-color:var(--warn)}
@@ -578,6 +582,46 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .reveal[open] > summary::after{transform:rotate(90deg)}
 .reveal > summary:active{background:var(--press)}
 .reveal[open] > summary{color:var(--muted)}
+
+/* The one thing in the header besides the way home. It is a phone call being
+   taken, so it is always one tap away from wherever somebody happens to be. */
+.add{
+  margin-left:auto;display:inline-flex;align-items:center;gap:.35rem;
+  min-height:var(--tap);padding:0 .8rem;
+  color:var(--accent);text-decoration:none;font-size:.85rem;
+  border:1px solid var(--rule-strong);border-radius:2px;touch-action:manipulation;
+}
+.add span[aria-hidden]{font-size:1.1rem;line-height:1}
+.add:active{background:var(--press)}
+@media(max-width:24rem){.addword{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}}
+
+.book{max-width:34rem}
+.field{margin:0 0 1rem;display:flex;flex-direction:column;gap:.3rem}
+.field label{font-size:.72rem;color:var(--muted);letter-spacing:.04em}
+.field input,.field select,.field textarea{
+  font-family:var(--body);font-size:1rem;color:var(--ink);
+  background:var(--surface);border:1px solid var(--rule-strong);border-radius:2px;
+  padding:0 .6rem;min-height:var(--tap);width:100%;
+}
+.field textarea{padding:.5rem .6rem;min-height:3.4rem;resize:vertical;line-height:1.4}
+.field input:focus,.field select:focus,.field textarea:focus{
+  outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent);
+}
+/* Under 16px iOS zooms the page in on focus and does not zoom back out, which
+   on a form this long strands somebody mid-booking. */
+@media(max-width:560px){.field input,.field select,.field textarea{font-size:16px}}
+.hint{margin:0;font-size:.78rem;color:var(--muted);line-height:1.4}
+.pair{display:grid;grid-template-columns:1fr;gap:0}
+@media(min-width:30rem){.pair{grid-template-columns:1fr 1fr;column-gap:1rem}}
+.running{
+  margin:0 0 1.25rem;padding:.6rem .8rem;font-size:.85rem;line-height:1.5;
+  background:var(--sunk);border-left:2px solid var(--rule-strong);
+}
+.running b{font-weight:400;color:var(--muted)}
+.submit{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin:1.5rem 0 .75rem}
+.act.primary{background:var(--accent);color:var(--ground);border-color:var(--accent)}
+.error ul{margin:.4rem 0 0;padding-left:1.1rem}
+.error li{margin:.15rem 0}
 
 .notefield{display:flex;flex-direction:column;gap:.35rem;margin-top:.75rem}
 .notefield label{font-size:.72rem;color:var(--muted);letter-spacing:.04em}

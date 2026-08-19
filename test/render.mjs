@@ -51,4 +51,15 @@ write('chase', listShell({ kind: 'chase', period: month }),
   listBody({ kind: 'chase', period: month, sittings: all, back: `/chase/${month}` }));
 write('called-off', listShell({ kind: 'called-off', period: today }),
   listBody({ kind: 'called-off', period: today, sittings: daySittings, back: `/called-off/${today}` }));
+const { newShell, newBody } = await import('../src/views/new.js');
+write('new', newShell({ date: today }),
+  newBody({ date: today, experiences: [...experiences.values()].filter((e) => e.visible), sittings: daySittings }));
+write('new-errors', newShell({ date: today }),
+  newBody({
+    date: today, experiences: [...experiences.values()].filter((e) => e.visible), sittings: daySittings,
+    values: { date: today, time: '', partySize: '0', firstName: '', phone: '', email: 'nope@' },
+    errors: ['Give a time, like 12:30.', 'How many people?', 'A first name is needed.',
+      'A phone number is needed — it is how the booking is confirmed.', 'That email address does not look right.'],
+  }));
+
 console.log('wrote', out);

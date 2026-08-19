@@ -21,7 +21,7 @@ export function monthShell({ month, today }) {
   </nav>`;
 
   // The calendar grid wants the full width; the reading views do not.
-  return { title: monthLabel(month), heading: monthLabel(month), titlebar, nav, wide: true };
+  return { title: monthLabel(month), heading: monthLabel(month), titlebar, nav, wide: true, add: today };
 }
 
 /** The part that waits on the diary. */

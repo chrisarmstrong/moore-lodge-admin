@@ -27,7 +27,7 @@ export function dayShell({ date }) {
   </nav>`;
 
   // The day carries a month beside it on a wide screen, so it wants the room.
-  return { title: dateLabel(date), heading: dateLabel(date), titlebar, nav, wide: true, split: true };
+  return { title: dateLabel(date), heading: dateLabel(date), titlebar, nav, wide: true, split: true, add: date };
 }
 
 export function dayBody({ date, sittings, weeks = null, month = null, today = null, back = `/day/${date}` }) {

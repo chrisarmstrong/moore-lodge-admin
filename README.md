@@ -19,6 +19,8 @@ never take the other down.
 | `/chase/PERIOD` | Who abandoned a booking and left a way to reach them |
 | `/called-off/PERIOD` | Cancellations and no shows, each with a way back |
 | `/today` | Redirects to today — what the home-screen shortcut points at |
+| `/new/DATE` | The form for a booking taken over the phone |
+| `POST /new` | Writes it |
 | `POST /booking/:id/:action` | Mark paid, seated, finished, no show, cancel, or put back |
 | `/whoami` | Who Cloudflare Access thinks you are. Handy while setting it up |
 
@@ -398,6 +400,41 @@ check a hand-made post could mark a cancelled booking paid — every `when` and
 The check is free. `apply` already reads the booking to get the revision it must
 write against, so the read that proves the write is safe is the read that was
 already happening.
+
+## Taking a booking over the phone
+
+`src/draft.js` reads the form. It is its own file because it is the part with
+rules, and rules want testing without a browser or a network — what comes out is
+a `BookingDraft` and what it knows about Wix is nothing.
+
+**A first name and a phone number are not optional.** Wix rejects any source but
+`WALK_IN` without them, so the form says so in its own words rather than letting
+the API say it in Wix's.
+
+**`source: OFFLINE`** is Wix's own term: "made by a restaurant employee, for
+example when a customer calls." **No `status` is sent** — unset, Wix picks
+`RESERVED` or `REQUESTED` from the location's approval setting, and asserting
+one over that setting would quietly bypass it.
+
+**Half twelve is 11:30Z in August and 12:30Z in January.** `localToInstant`
+measures the offset rather than assuming one: read the candidate back in local
+time and shift it by however far off it reads, twice, because the shift can
+itself cross a changeover. The loop stops when the *reading matches*, not when
+some offset is zero — that version walks an hour further away on every pass, and
+it was the first one written.
+
+**A rejected form is re-rendered, not redirected.** The one place this app does
+not use post-redirect-get, because the alternative is putting somebody's typing
+in a query string, and retyping a booking mid-phone-call is how the call goes
+badly. Nothing was written, so a refresh repeats nothing. Wix's own refusals —
+a pacing conflict, a full sitting — go on the form in its words, since they are
+worth reading.
+
+**None of this has run against the live API.** The key was revoked, so the
+create path is proved against a stub that pins the request body and nothing
+more. Wix may email a guest the moment it succeeds. Take one booking on a
+far-future date and look at it in the Wix dashboard before anybody uses it in
+front of a caller.
 
 ### Why the origin is checked
 
