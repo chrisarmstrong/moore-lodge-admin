@@ -103,6 +103,20 @@ for (const [name, vp] of [['iPhone SE (375px)', {width:375,height:667}], ['iPhon
   check('viewport-fit=cover for safe areas', head.viewportFit);
   check('fonts preloaded with crossorigin', head.preloads === 2, `${head.preloads}`);
 
+  // The mark is an empty box, so under `align-items: baseline` it supplied the
+  // flex baseline instead of the word next to it, and everything in the bar
+  // lined up against the wrong thing. Measure the ink, not the CSS.
+  const header = await page.evaluate(() => {
+    const word = document.querySelector('.wordmark');
+    const mark = document.querySelector('.mark');
+    const text = [...word.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+    const range = document.createRange(); range.selectNode(text);
+    const t = [...range.getClientRects()][0];
+    const m = mark.getBoundingClientRect();
+    return { delta: Math.abs((m.top + m.bottom) / 2 - (t.top + t.bottom) / 2) };
+  });
+  check('the mark is centred on the wordmark', header.delta <= 2, `${header.delta.toFixed(1)}px apart`);
+
   const m = await (await realFetch('http://localhost:8799/manifest.webmanifest')).json();
   check('manifest has id/scope/start_url', !!m.id && m.scope === '/' && m.start_url === '/');
   check('manifest display standalone', m.display === 'standalone');

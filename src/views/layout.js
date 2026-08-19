@@ -88,7 +88,6 @@ ${IOS_SPLASH}
 <a class="skip" href="#main">Skip to content</a>
 <header class="bar">
   <a class="wordmark" href="/"><i class="mark" aria-hidden="true"></i>Samson</a>
-  <span class="estate">Moore Lodge</span>
 </header>
 <p class="stale" id="stale" hidden></p>
 ${flash ? `<p class="flash${flash.ok ? '' : ' bad'}" role="status">${escape(flash.text)}</p>` : ''}
@@ -235,7 +234,10 @@ main{
 }
 
 .bar{
-  display:flex;align-items:baseline;gap:.75rem;
+  /* Centred, not baseline-aligned: the mark is an empty box, so it — not the
+     wordmark's text — was supplying the flex baseline, and anything sitting
+     beside it lined up against the wrong thing. */
+  display:flex;align-items:center;gap:.75rem;
   padding:calc(.85rem + var(--top)) max(1rem,var(--left)) .85rem max(1rem,var(--right));
   border-bottom:1px solid var(--rule);background:var(--surface);
   position:sticky;top:0;z-index:5;
@@ -254,7 +256,6 @@ main{
   -webkit-mask:url(/icons/monogram.svg) center/contain no-repeat;
   mask:url(/icons/monogram.svg) center/contain no-repeat;
 }
-.estate{font-size:.68rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 
 .stale{
   margin:0;padding:.6rem max(1rem,var(--left));background:var(--warn);color:var(--ground);
