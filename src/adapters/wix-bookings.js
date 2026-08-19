@@ -12,8 +12,8 @@ const RESERVATIONS_QUERY = '/table-reservations/reservations/v1/reservations/que
 const EXPERIENCES_QUERY = '/table-reservations/experiences/v1/experiences/query';
 const LOCATIONS_QUERY = '/table-reservations/reservation-locations/v1/reservation-locations/query';
 
-// Reservations move; the schedule and the experiences barely do.
-const RESERVATIONS_TTL = 30;
+// The schedule and the experiences barely change; reservations change while
+// somebody is looking at them, so they are never served from cache.
 const CONFIG_TTL = 600;
 
 const STATUS_FROM_WIX = {
@@ -42,9 +42,24 @@ const SOURCE_FROM_WIX = {
 };
 
 export class WixBookings {
-  constructor(env) {
+  constructor(env, ctx) {
     this.wix = new WixClient(env);
+    this.ctx = ctx;
     this.customFieldLabels = null;
+    this.rawExperiences = null;
+  }
+
+  /**
+   * Both the experience list and the custom-field labels are built from the
+   * same query, and every page needs both. Fetching it once per request — and
+   * from the edge cache between requests — is most of the difference between a
+   * page that takes five round trips and one that takes two.
+   */
+  experienceRecords() {
+    this.rawExperiences ||= this.wix.cachedQueryAll(
+      EXPERIENCES_QUERY, {}, 'experiences', { ttl: CONFIG_TTL, key: 'all', ctx: this.ctx },
+    );
+    return this.rawExperiences;
   }
 
   /**
@@ -71,7 +86,6 @@ export class WixBookings {
         sort: [{ fieldName: 'details.startDate', order: 'ASC' }],
       },
       'reservations',
-      { cacheTtl: RESERVATIONS_TTL },
     );
 
     const labels = await this.fieldLabels();
@@ -82,12 +96,7 @@ export class WixBookings {
 
   /** Experiences by id, so a sitting can show what it is and how full it is. */
   async experiences() {
-    const experiences = await this.wix.queryAll(
-      EXPERIENCES_QUERY,
-      {},
-      'experiences',
-      { cacheTtl: CONFIG_TTL },
-    );
+    const experiences = await this.experienceRecords();
 
     return new Map(experiences.map((experience) => {
       const config = experience.configuration || {};
@@ -121,8 +130,9 @@ export class WixBookings {
     };
 
     const [locations, experiences] = await Promise.all([
-      this.wix.queryAll(LOCATIONS_QUERY, {}, 'reservationLocations', { cacheTtl: CONFIG_TTL }),
-      this.wix.queryAll(EXPERIENCES_QUERY, {}, 'experiences', { cacheTtl: CONFIG_TTL }),
+      this.wix.cachedQueryAll(LOCATIONS_QUERY, {}, 'reservationLocations',
+        { ttl: CONFIG_TTL, key: 'all', ctx: this.ctx }),
+      this.experienceRecords(),
     ]);
 
     for (const location of locations) collect(location.configuration?.reservationForm);

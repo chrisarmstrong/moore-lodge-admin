@@ -11,7 +11,9 @@ const LAUNCH = process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } :
 const R = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const { WixBookings } = await import(`${R}/src/adapters/wix-bookings.js`);
 const { groupIntoSittings } = await import(`${R}/src/calendar.js`);
-const { dayView } = await import(`${R}/src/views/day.js`);
+const { dayShell, dayBody } = await import(`${R}/src/views/day.js`);
+const { pageHead, pageTail } = await import(`${R}/src/views/layout.js`);
+const render = (shell, body) => pageHead(shell) + body + pageTail();
 const { RESERVATIONS, EXPERIENCES, LOCATIONS } = await import('./fixture.mjs');
 
 globalThis.fetch = async (url) => ({ ok:true, status:200, text: async () => JSON.stringify(
@@ -22,7 +24,7 @@ const repo = new WixBookings({ WIX_API_KEY:'k', WIX_SITE_ID:'s' });
 const byDate = groupIntoSittings(
   await repo.inRange({ start:new Date('2026-07-31T23:00:00Z'), end:new Date('2026-08-31T23:00:00Z') }),
   await repo.experiences(), new Date('2026-08-05T12:00:00Z'));
-const dayHtml = dayView({ date:'2026-08-06', sittings: byDate.get('2026-08-06') });
+const dayHtml = render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings: byDate.get('2026-08-06') }));
 
 // Stands in for the Access login origin.
 const login = createServer((_,res)=>{ res.writeHead(200,{'content-type':'text/html'}); res.end('<title>Sign in</title>Access login'); }).listen(8797);

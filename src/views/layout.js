@@ -35,7 +35,18 @@ const IOS_SPLASH = [
   ];
 }).join('\n');
 
-export function page({ title, heading, sub, nav = '', body }) {
+export function page(opts) {
+  return pageHead(opts) + opts.body + pageTail();
+}
+
+/**
+ * Everything that can be written before Wix has answered.
+ *
+ * The title, the date and the arrows all come from the URL, so the shell can
+ * be on screen in a few tens of milliseconds while the diary itself is still
+ * being fetched. Only the part that needs data waits.
+ */
+export function pageHead({ title, heading, sub, nav = '', titlebar = '' }) {
   return `<!doctype html>
 <html lang="en-GB">
 <head>
@@ -78,18 +89,33 @@ ${IOS_SPLASH}
 </header>
 <p class="stale" id="stale" hidden></p>
 <main id="main">
-  <div class="head">
-    <h1>${escape(heading)}</h1>
-    ${sub ? `<p class="sub">${escape(sub)}</p>` : ''}
-  </div>
-  ${nav}
-  ${body}
-</main>
+  ${titlebar || `<div class="head"><h1>${escape(heading)}</h1>${sub ? `<p class="sub">${escape(sub)}</p>` : ''}</div>`}
+  ${nav}`;
+}
+
+export function pageTail() {
+  return `</main>
 <footer class="foot"><p>Reading live from Wix. Nothing here writes back — yet.</p></footer>
 <script>${SCRIPT}</script>
 </body>
 </html>`;
 }
+
+/**
+ * Shown while the diary is on its way, then hidden by a stylesheet that
+ * arrives with the real content. No script, no flash of empty page, and the
+ * shape matches what replaces it so nothing jumps.
+ */
+export function skeleton(kind) {
+  const rows = kind === 'month'
+    ? `<div class="sk-stats">${'<div class="sk-tile"></div>'.repeat(5)}</div>
+       <div class="sk-grid">${'<div class="sk-cell"></div>'.repeat(35)}</div>`
+    : `${'<div class="sk-card"><div class="sk-line w40"></div><div class="sk-line w70"></div><div class="sk-line w55"></div></div>'.repeat(3)}`;
+  return `<div id="sk" class="sk" aria-hidden="true">${rows}</div>`;
+}
+
+/** Emitted just before the real content, which retires the skeleton. */
+export const RETIRE_SKELETON = '<style>#sk{display:none}</style>';
 
 const SCRIPT = `
 (function () {
@@ -195,6 +221,33 @@ main{
   font-size:.8rem;text-align:center;position:sticky;top:0;z-index:6;
 }
 
+/* The title and its arrows are one control, not a heading with a button bar
+   underneath. Arrows are bare glyphs at a 48px target — a white box around a
+   chevron is a web form's idea of navigation, not an app's. */
+.titlebar{
+  display:grid;grid-template-columns:var(--tap) minmax(0,1fr) var(--tap);
+  align-items:center;padding:1.1rem 0 .5rem;gap:.25rem;
+}
+.titlebar .arrow{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:var(--tap);min-width:var(--tap);
+  font-family:var(--display);font-size:1.7rem;line-height:1;color:var(--accent);
+  text-decoration:none;border-radius:50%;touch-action:manipulation;
+  -webkit-touch-callout:none;
+}
+.titlebar .arrow:active{background:var(--press)}
+.titlebar .title{text-align:center;min-width:0}
+.titlebar h1{font-family:var(--display);font-weight:300;font-size:clamp(1.4rem,5.5vw,2rem);margin:0;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.titlebar .sub{margin:.15rem 0 0;color:var(--muted);font-size:.82rem}
+.titlebar .sub a{color:var(--accent);text-decoration:none;padding:.25rem 0}
+
+.subnav{display:flex;justify-content:center;gap:1.25rem;margin:0 0 1.25rem}
+.subnav a,.subnav span{
+  display:inline-flex;align-items:center;min-height:var(--tap);
+  font-size:.85rem;color:var(--accent);text-decoration:none;touch-action:manipulation;
+}
+.subnav span{color:var(--muted)}
+
 .head{padding:1.5rem 0 1rem}
 h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem);margin:0;line-height:1.15}
 .sub{margin:.35rem 0 0;color:var(--muted);font-size:.9rem}
@@ -226,6 +279,19 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .stat b{display:block;font-family:var(--display);font-weight:300;font-size:1.6rem;line-height:1;font-variant-numeric:tabular-nums}
 .stat span{display:block;font-size:.72rem;color:var(--muted);margin-top:.3rem;line-height:1.3}
 .stat.flag b{color:var(--warn)}
+.stat.link{text-decoration:none;display:block;touch-action:manipulation}
+.stat.link span{color:var(--accent)}
+.stat.link:active{background:var(--sunk)}
+
+.daysum{margin:0 0 .75rem;color:var(--muted);font-size:.9rem}
+
+.cue{
+  display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+  min-height:var(--tap);padding:0 1rem;margin:0 0 1.25rem;
+  border:1px solid var(--rule);background:var(--surface);color:var(--accent);
+  text-decoration:none;font-size:.9rem;border-radius:2px;touch-action:manipulation;
+}
+.cue:active{background:var(--press)}
 @media(max-width:560px){
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   /* An odd number of tiles used to leave a dead grey box on the end. */
@@ -258,18 +324,25 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .pill.over{border-left-color:var(--warn);color:var(--warn);background:var(--warn-wash)}
 .pill b{font-variant-numeric:tabular-nums;font-weight:400}
 
+/* A bare covers count sitting under a bare date read as two dates. Filling it
+   says "this many people", and colouring it carries the state the dots used
+   to — sold out, oversold — without a second row of marks. */
 .compact{display:none}
-.compact b{font-family:var(--display);font-weight:300;font-size:1.15rem;line-height:1;font-variant-numeric:tabular-nums}
-.dots{display:flex;gap:2px;margin-top:3px}
-.dot{width:5px;height:5px;border-radius:50%;background:var(--accent);display:block}
-.dot.full{background:var(--full)}
-.dot.over{background:var(--warn)}
-.dot.pending{background:var(--rule-strong)}
+.covers{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:1.7rem;height:1.7rem;padding:0 .3rem;border-radius:999px;
+  background:var(--accent);color:var(--ground);
+  font-family:var(--body);font-size:.82rem;font-variant-numeric:tabular-nums;line-height:1;
+}
+.covers.full{background:var(--full)}
+.covers.over{background:var(--warn)}
+.covers.none{background:transparent;color:var(--muted);border:1px dashed var(--rule-strong)}
 
 @media(max-width:560px){
-  .cell{min-height:3.6rem;padding:.35rem}
+  .cell{min-height:3.6rem;padding:.35rem;display:flex;flex-direction:column;align-items:center;gap:.2rem}
+  .cell .n{align-self:flex-start}
   .pill{display:none}
-  .compact{display:flex;flex-direction:column;align-items:flex-start;margin-top:.15rem}
+  .compact{display:flex}
 }
 
 .sitting{border:1px solid var(--rule);background:var(--surface);margin-bottom:1rem}
@@ -308,6 +381,35 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .booking .note b{font-weight:400;color:var(--warn)}
 .booking.dim{opacity:.55}
 .booking.chase{background:var(--warn-wash)}
+/* Contacts fold away so a sitting can be scanned in one screen. Dietary notes
+   and messages to the team deliberately stay out here in the open — they are
+   the reason somebody opens this page in a kitchen. */
+.reveal{grid-column:1/-1;margin:.15rem 0 0}
+.reveal > summary{
+  display:flex;align-items:center;gap:.4rem;min-height:40px;
+  font-size:.8rem;color:var(--accent);cursor:pointer;list-style:none;
+  touch-action:manipulation;
+}
+.reveal > summary::-webkit-details-marker{display:none}
+.reveal > summary::after{content:"›";display:inline-block;transition:transform .15s}
+.reveal[open] > summary::after{transform:rotate(90deg)}
+.reveal > summary:active{background:var(--press)}
+.reveal[open] > summary{color:var(--muted)}
+
+.sk{pointer-events:none}
+.sk-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(7rem,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin-bottom:1.5rem}
+.sk-tile{background:var(--surface);height:4.6rem}
+.sk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule)}
+.sk-cell{background:var(--surface);min-height:3.6rem}
+.sk-card{border:1px solid var(--rule);background:var(--surface);padding:1rem;margin-bottom:1rem}
+.sk-line{height:.85rem;background:var(--sunk);border-radius:2px;margin-bottom:.55rem}
+.sk-line.w40{width:40%}.sk-line.w70{width:70%}.sk-line.w55{width:55%}
+@media (prefers-reduced-motion:no-preference){
+  .sk-tile,.sk-cell,.sk-line{animation:pulse 1.4s ease-in-out infinite}
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+@media(max-width:560px){ .sk-stats{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
 .swallowed{margin:0;padding:.6rem 1rem;font-size:.76rem;color:var(--muted);border-top:1px dashed var(--rule)}
 
 .tag{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--rule-strong);padding:.2rem .4rem;white-space:nowrap;color:var(--muted)}

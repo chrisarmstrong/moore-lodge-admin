@@ -15,6 +15,9 @@ never take the other down.
 | `/` | Redirects to the current month |
 | `/calendar/YYYY-MM` | Month grid — sittings per day, covers against capacity |
 | `/day/YYYY-MM-DD` | A day's sittings, with guests, contact details and dietary notes |
+| `/settle/PERIOD` | Who still owes money, for a day or a month |
+| `/chase/PERIOD` | Who abandoned a booking and left a way to reach them |
+| `/today` | Redirects to today — what the home-screen shortcut points at |
 | `/whoami` | Who Cloudflare Access thinks you are. Handy while setting it up |
 
 ## The seam
@@ -61,6 +64,22 @@ addresses and dietary requirements, which is the price of the diary opening in a
 kitchen with no signal. It is only worth paying because `public/sw.js` throws
 that cache away the moment Access bounces a request to the login page. Anything
 that changes caching in that file needs to keep that promise.
+
+**Pages are streamed in two pieces.** The title, the date and the arrows come
+from the URL, so `stream()` in `src/worker.js` flushes them with a skeleton
+before Wix has answered; the diary follows, behind a stylesheet that retires the
+skeleton. Waiting for Wix before sending a byte left the previous screen frozen
+with nothing to show for it. The consequence is that the status line is gone by
+the time the body is built, so a failure after the flush is reported inside the
+page rather than as a 502.
+
+**Wix queries are POSTs, so `cf: { cacheTtl }` does nothing.** Cloudflare does
+not cache POST responses, and the TTLs that used to sit on those calls were
+inert — a page that needed the schedule still made five round trips, two of them
+the identical experiences query. Configuration now goes through
+`cachedQueryAll`, which stores the result against a synthetic GET key; a warm
+page makes two calls instead of five. Reservations are never cached: they change
+while somebody is looking at them.
 
 **Navigations are network-first.** A diary that is quietly out of date is worse
 than one that takes a moment. Cached pages only appear when the network fails,

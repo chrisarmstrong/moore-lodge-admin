@@ -12,15 +12,16 @@
 import { authenticate, AccessError } from './access.js';
 import { WixBookings } from './adapters/wix-bookings.js';
 import { groupIntoSittings, monthGrid, monthSummary } from './calendar.js';
-import { monthView } from './views/month.js';
-import { dayView } from './views/day.js';
-import { page, escape } from './views/layout.js';
+import { monthShell, monthBody } from './views/month.js';
+import { dayShell, dayBody } from './views/day.js';
+import { listShell, listBody, KINDS } from './views/list.js';
+import { page, pageHead, pageTail, skeleton, RETIRE_SKELETON, escape } from './views/layout.js';
 import {
   localDate, localMonth, monthWindow, dayWindow, isValidMonth, isValidDate,
 } from './time.js';
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     // Install metadata and static furniture carry no guest data, and several
@@ -41,7 +42,7 @@ export default {
     }
 
     try {
-      return await route(url, env, staff);
+      return await route(url, env, staff, ctx);
     } catch (error) {
       console.error(error);
       return failed(error);
@@ -49,8 +50,8 @@ export default {
   },
 };
 
-async function route(url, env, staff) {
-  const bookings = new WixBookings(env);
+async function route(url, env, staff, ctx) {
+  const bookings = new WixBookings(env, ctx);
 
   if (url.pathname === '/' || url.pathname === '') {
     return redirect(`/calendar/${localMonth()}`);
@@ -64,14 +65,38 @@ async function route(url, env, staff) {
   if (monthMatch) {
     const month = monthMatch[1];
     if (!isValidMonth(month)) return badRequest('That is not a month.');
-    return html(await renderMonth(bookings, month));
+    const today = localDate();
+    return stream(monthShell({ month, today }), 'month', async () => {
+      const { sittingsByDate } = await diary(bookings, monthWindow(month));
+      return monthBody({
+        month, weeks: monthGrid(month, sittingsByDate),
+        summary: monthSummary(sittingsByDate), today,
+      });
+    });
   }
 
   const dayMatch = url.pathname.match(/^\/day\/(\d{4}-\d{2}-\d{2})\/?$/);
   if (dayMatch) {
     const date = dayMatch[1];
     if (!isValidDate(date)) return badRequest('That is not a date.');
-    return html(await renderDay(bookings, date));
+    return stream(dayShell({ date }), 'day', async () => {
+      const { sittingsByDate } = await diary(bookings, dayWindow(date));
+      return dayBody({ date, sittings: sittingsByDate.get(date) || [] });
+    });
+  }
+
+  const listMatch = url.pathname.match(/^\/(settle|chase)\/(\d{4}-\d{2}(?:-\d{2})?)\/?$/);
+  if (listMatch) {
+    const [, kind, period] = listMatch;
+    const monthly = isValidMonth(period);
+    if (!monthly && !isValidDate(period)) return badRequest('That is not a date.');
+    if (!KINDS[kind]) return notFound();
+    return stream(listShell({ kind, period }), 'day', async () => {
+      const window = monthly ? monthWindow(period) : dayWindow(period);
+      const { sittingsByDate } = await diary(bookings, window);
+      const sittings = [...sittingsByDate.values()].flat().sort((a, b) => a.startsAt - b.startsAt);
+      return listBody({ kind, sittings });
+    });
   }
 
   // Handy while setting Access up: confirms who the edge thinks you are.
@@ -82,29 +107,59 @@ async function route(url, env, staff) {
   return notFound();
 }
 
-async function renderMonth(bookings, month) {
+async function diary(bookings, window) {
   const [reservations, experiences] = await Promise.all([
-    bookings.inRange(monthWindow(month)),
+    bookings.inRange(window),
     bookings.experiences(),
   ]);
-
-  const sittingsByDate = groupIntoSittings(reservations, experiences);
-  return monthView({
-    month,
-    weeks: monthGrid(month, sittingsByDate),
-    summary: monthSummary(sittingsByDate),
-    today: localDate(),
-  });
+  return { sittingsByDate: groupIntoSittings(reservations, experiences) };
 }
 
-async function renderDay(bookings, date) {
-  const [reservations, experiences] = await Promise.all([
-    bookings.inRange(dayWindow(date)),
-    bookings.experiences(),
-  ]);
+/**
+ * Sends the page in two pieces.
+ *
+ * The title, the date and the arrows are all known from the URL, so they go out
+ * immediately along with a skeleton; the diary follows when Wix answers, half a
+ * second later, and a stylesheet riding just ahead of it retires the skeleton.
+ * The alternative — waiting for Wix before sending a single byte — leaves the
+ * previous screen frozen on the phone with no sign anything is happening.
+ *
+ * The status line has already gone by the time the body is built, so a failure
+ * here can only be reported inside the page rather than as a 502.
+ */
+function stream(shell, skeletonKind, buildBody) {
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const write = (text) => writer.write(encoder.encode(text));
 
-  const sittingsByDate = groupIntoSittings(reservations, experiences);
-  return dayView({ date, sittings: sittingsByDate.get(date) || [] });
+  (async () => {
+    await write(pageHead(shell) + skeleton(skeletonKind));
+    try {
+      const body = await buildBody();
+      await write(RETIRE_SKELETON + body);
+    } catch (error) {
+      console.error(error);
+      await write(`${RETIRE_SKELETON}<div class="error"><p>Samson could not read from Wix just now.</p>
+        <p><code>${escape(error.message || 'unknown error')}</code></p>
+        <p>Try again in a moment. The Wix dashboard is unaffected.</p></div>`);
+    }
+    await write(pageTail());
+    await writer.close();
+  })().catch((error) => {
+    console.error(error);
+    writer.abort(error);
+  });
+
+  return new Response(readable, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'referrer-policy': 'same-origin',
+      'x-content-type-options': 'nosniff',
+      'x-frame-options': 'DENY',
+    },
+  });
 }
 
 const PUBLIC_ASSETS = ['/fonts/', '/icons/'];

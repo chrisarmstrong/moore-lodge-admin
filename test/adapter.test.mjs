@@ -2,9 +2,10 @@
 // carrying reservation shapes copied from the live site (names changed).
 import { WixBookings } from '../src/adapters/wix-bookings.js';
 import { groupIntoSittings, monthGrid, monthSummary } from '../src/calendar.js';
-import { monthView } from '../src/views/month.js';
-import { dayView } from '../src/views/day.js';
+import { monthShell, monthBody } from '../src/views/month.js';
+import { dayShell, dayBody } from '../src/views/day.js';
 import { STATUS, PAYMENT } from '../src/domain.js';
+import { pageHead, pageTail } from '../src/views/layout.js';
 
 const TEA = 'e0f47a7c-4768-4d6c-89df-d5db219a82da';
 const DIETARY = '0e64b271-61cb-4457-8760-8fb3e26accdf';   // experience-level field
@@ -66,6 +67,8 @@ globalThis.fetch = async (url, init) => {
   return { ok:true, status:200, text: async () => JSON.stringify(pick) };
 };
 
+const render = (shell, body) => pageHead(shell) + body + pageTail();
+
 let fail = 0;
 const is = (label, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -122,11 +125,11 @@ is('13:30 over capacity (15 seats, 13 booked)', aug6[1].covers <= aug6[1].capaci
 
 console.log('--- render ---');
 const summary = monthSummary(byDate);
-const html = monthView({ month:'2026-08', weeks:monthGrid('2026-08', byDate), summary, today:'2026-08-06' });
+const html = render(monthShell({ month:'2026-08', today:'2026-08-06' }), monthBody({ month:'2026-08', weeks:monthGrid('2026-08', byDate), summary, today:'2026-08-06' }));
 is('month html is a document', html.startsWith('<!doctype html>'), true);
 is('month marks today', html.includes('cell busy today'), true);
 is('month shows a sitting pill', html.includes('12:30'), true);
-const dhtml = dayView({ date:'2026-08-06', sittings:aug6 });
+const dhtml = render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings:aug6 }));
 is('day shows the big party', dhtml.includes('Erin Hen Party'), true);
 is('day shows the team message', dhtml.includes('Note to team'), true);
 is('day escapes the apostrophe in the note', dhtml.includes('can&#39;t eat egg'), true);
@@ -181,7 +184,7 @@ const sum = monthSummary(grouped);
 is('month abandoned is only the lost one', sum.abandoned, 5);
 is('month hidden tracked', sum.hidden, 3);
 
-const dayHtml = dayView({ date:'2026-08-06', sittings:[sit] });
+const dayHtml = render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings:[sit] }));
 is('day names the abandoned one', dayHtml.includes('Abandoned &middot; chase'), true);
 is('day says what it swallowed', dayHtml.includes('3 expired attempts not shown'), true);
 is('day does not show the duplicate', dayHtml.includes('julie johnston'), false);

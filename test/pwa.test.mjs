@@ -8,8 +8,10 @@ const LAUNCH = process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } :
 const R = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const { WixBookings } = await import(`${R}/src/adapters/wix-bookings.js`);
 const { groupIntoSittings, monthGrid, monthSummary } = await import(`${R}/src/calendar.js`);
-const { monthView } = await import(`${R}/src/views/month.js`);
-const { dayView } = await import(`${R}/src/views/day.js`);
+const { monthShell, monthBody } = await import(`${R}/src/views/month.js`);
+const { dayShell, dayBody } = await import(`${R}/src/views/day.js`);
+const { pageHead, pageTail } = await import(`${R}/src/views/layout.js`);
+const render = (shell, body) => pageHead(shell) + body + pageTail();
 const { RESERVATIONS, EXPERIENCES, LOCATIONS } = await import('./fixture.mjs');
 
 const realFetch = globalThis.fetch;
@@ -23,8 +25,8 @@ const bookings = await repo.inRange({ start:new Date('2026-07-31T23:00:00Z'), en
 const experiences = await repo.experiences();
 const byDate = groupIntoSittings(bookings, experiences, new Date('2026-08-05T12:00:00Z'));
 const pages = {
-  '/': monthView({ month:'2026-08', weeks:monthGrid('2026-08', byDate), summary:monthSummary(byDate), today:'2026-08-06' }),
-  '/day': dayView({ date:'2026-08-06', sittings: byDate.get('2026-08-06') }),
+  '/': render(monthShell({ month:'2026-08', today:'2026-08-06' }), monthBody({ month:'2026-08', weeks:monthGrid('2026-08', byDate), summary:monthSummary(byDate), today:'2026-08-06' })),
+  '/day': render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings: byDate.get('2026-08-06') })),
 };
 
 const TYPES = { '.woff2':'font/woff2', '.png':'image/png', '.js':'text/javascript',

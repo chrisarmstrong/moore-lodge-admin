@@ -1,30 +1,42 @@
-import { page, escape } from './layout.js';
+import { escape } from './layout.js';
 import { dateLabel, shiftDate, localDate, localMonth } from '../time.js';
 import { statusLabel, paymentLabel, PAYMENT, STATUS, DISPOSITION } from '../domain.js';
 
-export function dayView({ date, sittings }) {
+/** The part of the day page that needs no data — flushed while Wix answers. */
+export function dayShell({ date }) {
   const previous = shiftDate(date, -1);
   const next = shiftDate(date, 1);
   const today = localDate();
+  const month = localMonth(new Date(`${date}T12:00:00Z`));
 
-  const nav = `<nav class="nav">
-    <a href="/day/${previous}" rel="prev" aria-label="Previous day">&larr;<span class="long"> Previous day</span></a>
-    ${date === today ? '<span class="here">Today</span>' : `<a href="/day/${today}">Today</a>`}
-    <a href="/day/${next}" rel="next" aria-label="Next day"><span class="long">Next day </span>&rarr;</a>
-    <span class="spacer"></span>
-    <a href="/calendar/${localMonth(new Date(`${date}T12:00:00Z`))}">Month</a>
+  const titlebar = `<div class="titlebar">
+    <a class="arrow" href="/day/${previous}" rel="prev" aria-label="Previous day">&lsaquo;</a>
+    <div class="title">
+      <h1>${escape(shortDate(date))}</h1>
+      <p class="sub">${date === today ? 'Today' : escape(weekday(date))}</p>
+    </div>
+    <a class="arrow" href="/day/${next}" rel="next" aria-label="Next day">&rsaquo;</a>
+  </div>`;
+
+  // Actions live here rather than as inline text in the subtitle: a link inside
+  // a sentence cannot be a 44px target without wrecking the line it sits in.
+  const nav = `<nav class="subnav">
+    <a href="/calendar/${month}">Month view</a>
+    ${date === today ? '' : `<a href="/day/${today}">Jump to today</a>`}
   </nav>`;
 
-  if (sittings.length === 0) {
-    return page({
-      title: dateLabel(date),
-      heading: dateLabel(date),
-      nav,
-      body: '<p class="empty">Nothing booked for this day.</p>',
-    });
-  }
+  return { title: dateLabel(date), heading: dateLabel(date), titlebar, nav };
+}
+
+export function dayBody({ date, sittings }) {
+  if (sittings.length === 0) return '<p class="empty">Nothing booked for this day.</p>';
 
   const totalCovers = sittings.reduce((total, sitting) => total + sitting.covers, 0);
+  const toSettle = sittings.reduce((total, sitting) => total + sitting.toSettle, 0);
+
+  const summary = `<p class="daysum">${totalCovers} ${totalCovers === 1 ? 'guest' : 'guests'} across
+    ${sittings.length} ${sittings.length === 1 ? 'sitting' : 'sittings'}.</p>
+    ${toSettle ? `<a class="cue" href="/settle/${date}">${toSettle} to settle on arrival <span>&rsaquo;</span></a>` : ''}`;
 
   const body = sittings.map((sitting) => {
     const over = sitting.capacity != null && sitting.covers > sitting.capacity;
@@ -42,16 +54,10 @@ export function dayView({ date, sittings }) {
     </section>`;
   }).join('');
 
-  return page({
-    title: dateLabel(date),
-    heading: dateLabel(date),
-    sub: `${totalCovers} ${totalCovers === 1 ? 'guest' : 'guests'} across ${sittings.length} ${sittings.length === 1 ? 'sitting' : 'sittings'}.`,
-    nav,
-    body,
-  });
+  return summary + body;
 }
 
-function bookingRow(booking) {
+export function bookingRow(booking) {
   const abandoned = booking.disposition === DISPOSITION.abandoned;
   const inProgress = booking.disposition === DISPOSITION.inProgress;
 
@@ -62,22 +68,17 @@ function bookingRow(booking) {
     tags.push(`<span class="tag">${escape(statusLabel(booking.status))}</span>`);
   }
 
-  // An abandoned attempt was never paid for by definition; saying so twice adds
-  // nothing next to the label that already explains it.
   if (!abandoned && !inProgress) {
     if (booking.payment === PAYMENT.paid) tags.push('<span class="tag ok">Paid</span>');
     else tags.push(`<span class="tag warn">${escape(paymentLabel(booking.payment))}</span>`);
   }
   if (booking.source !== 'online') tags.push(`<span class="tag">${escape(booking.source)}</span>`);
+  if (!booking.email) tags.push('<span class="tag">No email</span>');
 
-  // Only things worth aiming a thumb at become chips. The reference and the
-  // absence of an email are facts to read, not buttons to press, so they sit
-  // with the tags rather than taking a row each.
   const contact = [];
   if (booking.phone) contact.push(`<a href="tel:${escape(booking.phone)}">${escape(booking.phone)}</a>`);
   if (booking.email) contact.push(`<a href="mailto:${escape(booking.email)}">${escape(booking.email)}</a>`);
-  if (!booking.email) tags.push('<span class="tag">No email</span>');
-  tags.push(`<span class="ref">${escape(booking.reference)}</span>`);
+  contact.push(`<span class="ref">${escape(booking.reference)}</span>`);
 
   const notes = booking.notes
     .map((note) => `<p class="note"><b>${escape(note.label)}:</b> ${escape(note.value)}</p>`)
@@ -90,8 +91,26 @@ function bookingRow(booking) {
   return `<div class="booking${inProgress ? ' dim' : ''}${abandoned ? ' chase' : ''}">
     <div class="party">${booking.partySize}</div>
     <div class="who">${escape(booking.guestName)}</div>
-    ${contact.length ? `<div class="contacts">${contact.join('')}</div>` : ''}
     <div class="tags">${tags.join('')}</div>
+    <details class="reveal">
+      <summary>${booking.phone || booking.email ? 'Contact details' : 'Reference'}</summary>
+      <div class="contacts">${contact.join('')}</div>
+    </details>
     ${notes}${teamMessage}
   </div>`;
+}
+
+function weekday(iso) {
+  return dateLabel(iso).split(' ')[0];
+}
+
+/**
+ * "6 August", or "6 August 2025" when the year isn't the obvious one. The
+ * weekday sits underneath, so repeating it in the title said the same thing
+ * twice in a row that has to fit between two arrows.
+ */
+function shortDate(iso) {
+  const [, day, month, year] = dateLabel(iso).split(' ');
+  const thisYear = String(new Date().getFullYear());
+  return year === thisYear ? `${day} ${month}` : `${day} ${month} ${year}`;
 }
