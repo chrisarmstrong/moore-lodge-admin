@@ -143,5 +143,10 @@ function decodeBase64Url(segment) {
 function required(env, name) {
   const value = env[name];
   if (!value) throw new AccessError(`${name} is not configured`);
+  // Left as shipped, this would sail past the truthiness check and fail later
+  // as an unexplained fetch error against REPLACE-ME.cloudflareaccess.com.
+  if (String(value).includes('REPLACE-ME')) {
+    throw new AccessError(`${name} is still set to its placeholder`);
+  }
   return value;
 }

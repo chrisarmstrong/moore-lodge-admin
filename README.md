@@ -55,11 +55,34 @@ secret.
 
 ### Cloudflare Access
 
-Create a self-hosted Access application for `samson.moorelodge.co.uk`, allow the
-staff email addresses, and copy its team domain and AUD tag into
-`wrangler.jsonc`. Access authenticates at the edge; `src/access.js` verifies the
-assertion again inside the Worker, because anyone reaching the origin directly
-would otherwise bypass the edge entirely.
+`ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` don't exist until the Access application
+does, and the application needs the hostname to exist first — so the order is:
+
+1. **Deploy the Worker.** `npm run deploy` creates the custom domain
+   `samson.moorelodge.co.uk` and its DNS record. Until Access is in front of it
+   the Worker is publicly reachable, but it fails closed: with no valid
+   assertion every request gets the 403 page, so nothing leaks in the gap.
+2. **Create the application.** Zero Trust → Access controls → Applications →
+   Create new application → Self-hosted and private → Add public hostname, and
+   choose `samson` on `moorelodge.co.uk`. Set a session duration — a week is
+   reasonable for a phone kept in an apron pocket.
+3. **Add a policy.** Applications are deny-by-default, so nobody gets in until
+   an Allow policy matches. Use the Emails selector and list the staff
+   addresses.
+4. **Read off the two values.**
+   - `ACCESS_AUD` — the application's own Overview, under **Additional
+     settings**, as *Application Audience (AUD) tag*.
+   - `ACCESS_TEAM_DOMAIN` — your team domain, `<team-name>.cloudflareaccess.com`.
+     It's in Zero Trust → Settings, and it's also the host you get bounced to
+     when Access challenges you for a login.
+5. **Put them in `wrangler.jsonc` and deploy again.**
+
+Then open `/whoami`: it returns the email Access believes you are, which
+confirms the whole chain end to end.
+
+Access authenticates at the edge; `src/access.js` verifies the assertion again
+inside the Worker, because anyone reaching the origin directly would otherwise
+bypass the edge entirely.
 
 ## Things learned from the live API
 
