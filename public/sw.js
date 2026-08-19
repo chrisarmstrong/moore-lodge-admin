@@ -17,7 +17,10 @@
  *    is what `purgeDiary` is for, and why it runs on every bounce to login.
  */
 
-const VERSION = 'v1';
+// Replaced by the Worker with the Cloudflare deployment id when this file is
+// served. A hand-maintained constant is the classic way to ship a change and
+// leave everyone on the old worker because nobody remembered to bump it.
+const VERSION = '__VERSION__';
 const SHELL = `samson-shell-${VERSION}`;   // fonts, icons, the offline page
 const DIARY = `samson-diary-${VERSION}`;   // rendered pages — guest data lives here
 const MINE = new Set([SHELL, DIARY]);
@@ -57,6 +60,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data === 'purge') event.waitUntil(purgeDiary());
+  if (event.data === 'version') event.source?.postMessage({ version: VERSION });
 });
 
 self.addEventListener('fetch', (event) => {

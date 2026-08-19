@@ -65,6 +65,14 @@ kitchen with no signal. It is only worth paying because `public/sw.js` throws
 that cache away the moment Access bounces a request to the login page. Anything
 that changes caching in that file needs to keep that promise.
 
+**An installed app updates itself.** `wrangler deploy` mints a new deployment
+id, the Worker stamps it into `sw.js` as it serves it, and the changed bytes are
+what make a browser install the new worker at all — a hand-bumped constant is
+how a change ships to the server and never reaches a home screen. Caches are
+named after that id, so a deploy retires the old ones. The page reloads on
+`controllerchange`, and a phone left open on the diary all afternoon checks for
+both a new version and newer bookings when it comes back into view.
+
 **Pages are streamed in two pieces.** The title, the date and the arrows come
 from the URL, so `stream()` in `src/worker.js` flushes them with a skeleton
 before Wix has answered; the diary follows, behind a stylesheet that retires the

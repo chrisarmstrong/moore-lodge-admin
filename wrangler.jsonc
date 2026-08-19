@@ -21,6 +21,9 @@
     "ACCESS_TEAM_DOMAIN": "plain-leaf-6898.cloudflareaccess.com",
     "ACCESS_AUD": "beb01093984400f1811b2db0fc78988f0464da5bb20ef9baf3c6478164acb1da"
   },
+  // Gives the Worker its own deployment id, which is stamped into sw.js so a
+  // deploy is always visible to an installed app.
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "routes": [
     { "pattern": "samson.moorelodge.co.uk", "custom_domain": true }
   ]

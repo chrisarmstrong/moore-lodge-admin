@@ -30,6 +30,7 @@ export default {
     // service worker must be reachable to update itself. They stay public.
     if (isPublicAsset(url.pathname)) {
       const response = env.ASSETS ? await env.ASSETS.fetch(request) : notFound();
+      if (url.pathname === '/sw.js') return serviceWorker(response, env);
       return withAssetHeaders(response, url.pathname);
     }
 
@@ -66,7 +67,7 @@ async function route(url, env, staff, ctx) {
     const month = monthMatch[1];
     if (!isValidMonth(month)) return badRequest('That is not a month.');
     const today = localDate();
-    return stream(monthShell({ month, today }), 'month', async () => {
+    return stream({ ...monthShell({ month, today }), version: buildVersion(env) }, 'month', async () => {
       const { sittingsByDate } = await diary(bookings, monthWindow(month));
       return monthBody({
         month, weeks: monthGrid(month, sittingsByDate),
@@ -79,7 +80,7 @@ async function route(url, env, staff, ctx) {
   if (dayMatch) {
     const date = dayMatch[1];
     if (!isValidDate(date)) return badRequest('That is not a date.');
-    return stream(dayShell({ date }), 'day', async () => {
+    return stream({ ...dayShell({ date }), version: buildVersion(env) }, 'day', async () => {
       const { sittingsByDate } = await diary(bookings, dayWindow(date));
       return dayBody({ date, sittings: sittingsByDate.get(date) || [] });
     });
@@ -91,7 +92,7 @@ async function route(url, env, staff, ctx) {
     const monthly = isValidMonth(period);
     if (!monthly && !isValidDate(period)) return badRequest('That is not a date.');
     if (!KINDS[kind]) return notFound();
-    return stream(listShell({ kind, period }), 'day', async () => {
+    return stream({ ...listShell({ kind, period }), version: buildVersion(env) }, 'day', async () => {
       const window = monthly ? monthWindow(period) : dayWindow(period);
       const { sittingsByDate } = await diary(bookings, window);
       const sittings = [...sittingsByDate.values()].flat().sort((a, b) => a.startsAt - b.startsAt);
@@ -167,6 +168,30 @@ const PUBLIC_FILES = new Set(['/manifest.webmanifest', '/sw.js', '/offline.html'
 
 function isPublicAsset(pathname) {
   return PUBLIC_FILES.has(pathname) || PUBLIC_ASSETS.some((prefix) => pathname.startsWith(prefix));
+}
+
+/**
+ * The deployment id, which changes on every `wrangler deploy`.
+ *
+ * Stamping it into the worker script means the script's bytes change whenever
+ * the app does, which is what makes a browser treat it as a new worker and run
+ * the install-activate-claim cycle. Without it a CSS change would ship to the
+ * server and sit there, because the worker looked identical.
+ */
+function buildVersion(env) {
+  return env.CF_VERSION_METADATA?.id || 'dev';
+}
+
+async function serviceWorker(response, env) {
+  const source = (await response.text()).replace('__VERSION__', buildVersion(env));
+  return new Response(source, {
+    headers: {
+      'content-type': 'text/javascript; charset=utf-8',
+      // Must be revalidated on every check, or a stale worker outlives the
+      // deploy that was meant to replace it.
+      'cache-control': 'no-cache',
+    },
+  });
 }
 
 function withAssetHeaders(response, pathname) {

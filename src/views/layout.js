@@ -46,7 +46,7 @@ export function page(opts) {
  * be on screen in a few tens of milliseconds while the diary itself is still
  * being fetched. Only the part that needs data waits.
  */
-export function pageHead({ title, heading, sub, nav = '', titlebar = '' }) {
+export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev' }) {
   return `<!doctype html>
 <html lang="en-GB">
 <head>
@@ -66,6 +66,8 @@ export function pageHead({ title, heading, sub, nav = '', titlebar = '' }) {
      default, and Cloudflare Access would bounce that fetch to a login page,
      leaving the app uninstallable for no visible reason. -->
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/icons/icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -79,12 +81,13 @@ ${IOS_SPLASH}
 <link rel="preload" href="/fonts/CaslonDoric-Regular-Web.woff2" as="font" type="font/woff2" crossorigin>
 
 <meta name="rendered-at" content="${new Date().toISOString()}">
+<meta name="build" content="${escape(version)}">
 <style>${CSS}</style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="bar">
-  <a class="wordmark" href="/">Samson</a>
+  <a class="wordmark" href="/"><i class="mark" aria-hidden="true"></i>Samson</a>
   <span class="estate">Moore Lodge</span>
 </header>
 <p class="stale" id="stale" hidden></p>
@@ -119,25 +122,52 @@ export const RETIRE_SKELETON = '<style>#sk{display:none}</style>';
 
 const SCRIPT = `
 (function () {
+  var STALE_AFTER = 3 * 60 * 1000;
+  var reloading = false;
+
+  function renderedAt() {
+    var meta = document.querySelector('meta[name="rendered-at"]');
+    var when = meta && new Date(meta.content);
+    return when && !isNaN(when) ? when : null;
+  }
+
+  function refresh() {
+    if (reloading) return;
+    reloading = true;
+    location.reload();
+  }
+
   if ('serviceWorker' in navigator) {
     addEventListener('load', function () {
-      navigator.serviceWorker.register('/sw.js').catch(function () {});
+      navigator.serviceWorker.register('/sw.js').then(function (registration) {
+        // A new worker taking over means a new deployment has landed. The diary
+        // is read-only, so there is nothing to lose by picking it up at once.
+        navigator.serviceWorker.addEventListener('controllerchange', refresh);
+
+        // A phone left on the diary all afternoon never navigates, so it would
+        // otherwise never notice either a new version or newer bookings.
+        addEventListener('visibilitychange', function () {
+          if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+          registration.update();
+          var when = renderedAt();
+          if (when && Date.now() - when.getTime() > STALE_AFTER) refresh();
+        });
+      }).catch(function () {});
     });
   }
 
   // A cached page can be hours old. Say so plainly rather than letting somebody
   // read yesterday's covers as today's.
   var banner = document.getElementById('stale');
-  var renderedAt = document.querySelector('meta[name="rendered-at"]');
   function check() {
-    if (!banner || !renderedAt) return;
+    if (!banner) return;
     if (navigator.onLine) { banner.hidden = true; return; }
-    var when = new Date(renderedAt.content);
-    var time = isNaN(when) ? '' : ' as it was at ' + when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    var when = renderedAt();
+    var time = when ? ' as it was at ' + when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
     banner.textContent = 'Offline — showing the diary' + time + '.';
     banner.hidden = false;
   }
-  addEventListener('online', check);
+  addEventListener('online', function () { check(); refresh(); });
   addEventListener('offline', check);
   check();
 })();
@@ -212,7 +242,16 @@ main{
 .wordmark{
   font-family:var(--display);font-size:1.35rem;color:var(--accent);
   text-decoration:none;letter-spacing:.02em;
-  display:inline-flex;align-items:center;min-height:var(--tap);margin:-.75rem 0;padding-right:.5rem;
+  display:inline-flex;align-items:center;gap:.45rem;
+  min-height:var(--tap);margin:-.75rem 0;padding-right:.5rem;
+}
+/* Masked rather than inlined: the monogram is 8KB of path data, which would
+   otherwise ride along on every page. As a mask it is fetched once, cached by
+   the service worker, and still takes its colour from the theme. */
+.mark{
+  width:1.35em;height:1.35em;flex:none;background:currentColor;
+  -webkit-mask:url(/icons/monogram.svg) center/contain no-repeat;
+  mask:url(/icons/monogram.svg) center/contain no-repeat;
 }
 .estate{font-size:.68rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 
