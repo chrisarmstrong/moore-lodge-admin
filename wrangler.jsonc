@@ -18,8 +18,8 @@
   // anything still declared below is re-applied from this file every time.
   "vars": {
     "WIX_SITE_ID": "e0450db8-ce17-4419-a934-7a9747d9b537",
-    "ACCESS_TEAM_DOMAIN": "REPLACE-ME.cloudflareaccess.com",
-    "ACCESS_AUD": "REPLACE-ME"
+    "ACCESS_TEAM_DOMAIN": "plain-leaf-6898.cloudflareaccess.com",
+    "ACCESS_AUD": "beb01093984400f1811b2db0fc78988f0464da5bb20ef9baf3c6478164acb1da"
   },
   "routes": [
     { "pattern": "samson.moorelodge.co.uk", "custom_domain": true }

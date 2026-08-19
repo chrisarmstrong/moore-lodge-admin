@@ -42,8 +42,9 @@ npm run dev
 npm test
 ```
 
-`npm test` needs no credentials — it runs the date logic and the adapter against
-a stubbed transport.
+`npm test` needs no credentials. It covers the date logic, the adapter against a
+stubbed transport, and the Access verification against a generated RSA keypair —
+real signatures, and every way a request should be turned away.
 
 ### Configuration
 
@@ -75,7 +76,8 @@ does, and the application needs the hostname to exist first — so the order is:
    - `ACCESS_TEAM_DOMAIN` — your team domain, `<team-name>.cloudflareaccess.com`.
      It's in Zero Trust → Settings, and it's also the host you get bounced to
      when Access challenges you for a login.
-5. **Put them in `wrangler.jsonc` and deploy again.**
+5. **Put them in `wrangler.jsonc` and deploy again.** Both are set already for
+   the `plain-leaf-6898` team.
 
 Then open `/whoami`: it returns the email Access believes you are, which
 confirms the whole chain end to end.
