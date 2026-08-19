@@ -570,11 +570,27 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   font-size:.8rem;color:var(--accent);cursor:pointer;list-style:none;
   touch-action:manipulation;
 }
+/* Right-aligned: it is the least important thing on the row, and it now sits
+   under the notes where a left edge would read as another note. */
+.reveal > summary{justify-content:flex-end}
 .reveal > summary::-webkit-details-marker{display:none}
 .reveal > summary::after{content:"›";display:inline-block;transition:transform .15s}
 .reveal[open] > summary::after{transform:rotate(90deg)}
 .reveal > summary:active{background:var(--press)}
 .reveal[open] > summary{color:var(--muted)}
+
+.notefield{display:flex;flex-direction:column;gap:.35rem;margin-top:.75rem}
+.notefield label{font-size:.72rem;color:var(--muted);letter-spacing:.04em}
+.notefield textarea{
+  font-family:var(--body);font-size:.9rem;line-height:1.4;color:var(--ink);
+  background:var(--surface);border:1px solid var(--rule-strong);border-radius:2px;
+  padding:.5rem .6rem;resize:vertical;min-height:3.4rem;width:100%;
+}
+/* 16px or larger, or iOS zooms the page in when it takes focus and leaves it
+   there — the one font-size on the page that is not a matter of taste. */
+@media(max-width:560px){.notefield textarea{font-size:16px}}
+.notefield textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.notefield button{align-self:flex-start}
 
 .sk{pointer-events:none}
 .sk-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(7rem,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin-bottom:1.5rem}

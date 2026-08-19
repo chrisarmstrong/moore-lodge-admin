@@ -104,10 +104,18 @@ export class WixBookings {
    * the booking since. Reading it fresh turns "your screen is out of date" into
    * a non-event.
    */
-  async apply(id, changes) {
+  async apply(id, changes, allowed = null) {
     const current = await this.wix.get(`${RESERVATION}/${encodeURIComponent(id)}?fieldsets=FULL`);
     const reservation = current.reservation;
     if (!reservation) throw new Error('That booking no longer exists.');
+
+    // The read that fetches the revision is also the read that says what this
+    // booking is, so the caller can rule the change out before it is written
+    // without paying for a second round trip. Which matters: the page decides
+    // what to offer, and a form post does not have to come from the page.
+    if (allowed && !allowed(toBooking(reservation, await this.fieldLabels()))) {
+      throw new Error('That is not something you can do to this booking.');
+    }
 
     const updated = await this.wix.patch(`${RESERVATION}/${encodeURIComponent(id)}`, {
       reservation: { id, revision: reservation.revision, ...changes },

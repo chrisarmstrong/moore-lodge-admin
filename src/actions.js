@@ -18,6 +18,9 @@
 
 import { PAYMENT, STATUS, holdsASeat, isCalledOff } from './domain.js';
 
+/** Long enough for anything worth saying to the kitchen, short of an essay. */
+export const NOTE_LIMIT = 1000;
+
 /**
  * @typedef {object} Action
  * @property {string}  label
@@ -74,6 +77,19 @@ export const ACTIONS = {
       || booking.status === STATUS.requested
       || booking.status === STATUS.seated,
   },
+  note: {
+    label: 'Save note',
+    done: 'Note saved.',
+    // The only action whose change comes from the page rather than from here.
+    // Trimmed and capped: a note is a line for the team, and an unbounded one
+    // is a paste accident that a phone then has to render on every render.
+    from: (form) => ({ teamMessage: String(form.get('note') || '').trim().slice(0, NOTE_LIMIT) }),
+    // Rendered as its own field rather than a button beside the others.
+    standalone: true,
+    // Worth writing on anything real, including a cancellation — why it was
+    // called off is exactly the sort of thing somebody wants a week later.
+    allow: (booking) => holdsASeat(booking) || isCalledOff(booking),
+  },
   restore: {
     label: 'Put back on the diary',
     done: 'Back on the diary.',
@@ -99,6 +115,7 @@ export function availableFor(booking) {
   if (!live && !calledOff) return [];
 
   return Object.entries(ACTIONS)
+    .filter(([, action]) => !action.standalone)
     // Which side of the diary an action works on is declared, never inferred.
     // "Mark paid" would otherwise match a cancelled booking through its own
     // `when` and invite recording a payment against something nobody is coming
@@ -106,4 +123,20 @@ export function availableFor(booking) {
     .filter(([, action]) => Boolean(action.calledOff) === calledOff)
     .filter(([, action]) => !action.when || action.when(booking))
     .map(([name, action]) => ({ name, ...action }));
+}
+
+/**
+ * Whether an action may be applied to a booking at all — which is a different
+ * question from whether a button for it is drawn.
+ *
+ * `availableFor` dresses a page; this is what the route asks before it writes.
+ * A form post need not have come from a page we rendered, so "the button was
+ * not there" is not a control, and without this a hand-made post could mark a
+ * cancelled booking paid.
+ */
+export function permits(booking, name) {
+  const action = ACTIONS[name];
+  if (!action) return false;
+  if (action.allow) return action.allow(booking);
+  return availableFor(booking).some((available) => available.name === name);
 }

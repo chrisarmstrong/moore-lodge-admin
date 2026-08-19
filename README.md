@@ -373,6 +373,32 @@ offering actions on an abandoned attempt, which is why an attempt still in
 checkout, or one abandoned last week, still gets none: it shows its contact
 details and nothing else.
 
+### Notes are the team's, not the guest's
+
+`teamMessage` is editable from the day. The guest's own answers above it are
+not, and that is the point of the distinction: those are what somebody said
+about their own allergies, and a back office that can quietly rewrite them is
+one that can put words in a guest's mouth about the thing on this page most
+likely to hurt somebody. A change phoned in later goes in the team note, beside
+what they originally said rather than over it.
+
+It is the only action whose change comes from the page rather than from
+`actions.js`, so it is the only one with a `from(form)`. Trimmed, capped at
+`NOTE_LIMIT`, and allowed on a cancellation too — why something was called off
+is exactly what somebody wants a week later.
+
+### The page decides what to offer; the route decides what to do
+
+`availableFor` dresses a page. `permits` is what the route asks before it
+writes, and they are different questions: a form post need not have come from a
+page we rendered, so "the button was not there" is not a control. Without that
+check a hand-made post could mark a cancelled booking paid — every `when` and
+`calledOff` rule lived in the view layer only.
+
+The check is free. `apply` already reads the booking to get the revision it must
+write against, so the read that proves the write is safe is the read that was
+already happening.
+
 ### Why the origin is checked
 
 Access authenticates with a cookie, and a cookie rides along on a cross-site

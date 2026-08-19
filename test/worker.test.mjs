@@ -1,6 +1,7 @@
 // Drives the Worker itself: a real Access assertion, a real form post, and the
 // ways a booking must not be changeable.
 import worker from '../src/worker.js';
+import { NOTE_LIMIT } from '../src/actions.js';
 
 let fail = 0;
 const is = (label, got, want) => {
@@ -29,6 +30,9 @@ async function assertion() {
 }
 
 let patched = null;
+// What the booking actually is when the write goes to apply itself, which is
+// not necessarily what the page that posted the form believed.
+let onDisk = { status: 'RESERVED' };
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
   if (u.includes('cloudflareaccess.com')) return { ok:true, status:200, json: async () => ({ keys:[jwk] }) };
@@ -37,7 +41,7 @@ globalThis.fetch = async (url, init = {}) => {
     return { ok:true, status:200, text: async () => JSON.stringify({ reservation:{ id:ID, revision:'8', status:'RESERVED', paymentStatus:'PAID', details:{ startDate:'2026-08-06T11:30:00Z', partySize:2 }, reservee:{}, createdDate:'2026-08-01T00:00:00Z' } }) };
   }
   if ((init.method || 'GET') === 'GET') {
-    return { ok:true, status:200, text: async () => JSON.stringify({ reservation:{ id:ID, revision:'7', status:'RESERVED', paymentStatus:'NOT_PAID', details:{ startDate:'2026-08-06T11:30:00Z', partySize:2 }, reservee:{}, createdDate:'2026-08-01T00:00:00Z' } }) };
+    return { ok:true, status:200, text: async () => JSON.stringify({ reservation:{ id:ID, revision:'7', status:onDisk.status, paymentStatus:'NOT_PAID', details:{ startDate:'2026-08-06T11:30:00Z', partySize:2 }, reservee:{}, createdDate:'2026-08-01T00:00:00Z' } }) };
   }
   return { ok:true, status:200, text: async () => JSON.stringify({ experiences: [], reservationLocations: [] }) };
 };
@@ -46,13 +50,13 @@ const env = { WIX_API_KEY:'k', WIX_SITE_ID:'s', ACCESS_TEAM_DOMAIN:TEAM, ACCESS_
               CF_VERSION_METADATA:{ id:'test-build' } };
 const ctx = { waitUntil() {} };
 
-const post = async (path, { origin = ORIGIN, fetchSite, back = '/day/2026-08-06', token } = {}) => {
+const post = async (path, { origin = ORIGIN, fetchSite, back = '/day/2026-08-06', token, fields = {} } = {}) => {
   const headers = { 'content-type':'application/x-www-form-urlencoded' };
   if (origin) headers.origin = origin;
   if (fetchSite) headers['sec-fetch-site'] = fetchSite;
   headers['Cf-Access-Jwt-Assertion'] = token ?? await assertion();
   return worker.fetch(new Request(`${ORIGIN}${path}`, {
-    method:'POST', headers, body:new URLSearchParams({ back }),
+    method:'POST', headers, body:new URLSearchParams({ back, ...fields }),
   }), env, ctx);
 };
 
@@ -70,12 +74,16 @@ console.log('--- a staff member marking a booking paid ---');
 
 console.log('--- and putting one back that was called off ---');
 {
+  // It has to actually be called off. Before the route checked, this passed
+  // against a live booking, which is the whole bug.
+  onDisk = { status:'CANCELED' };
   patched = null;
   const res = await post(`/booking/${ID}/restore`, { back:'/called-off/2026-08-06' });
   is('writes the status back to reserved', patched.reservation.status, 'RESERVED');
   is('and returns to the list it came from',
     res.headers.get('location').startsWith('/called-off/2026-08-06?done='), true);
   is('saying so', decodeURIComponent(res.headers.get('location').split('done=')[1]), 'Back on the diary.');
+  onDisk = { status:'RESERVED' };
 }
 
 console.log('--- the ways a booking must not be changeable ---');
@@ -99,6 +107,46 @@ console.log('--- the ways a booking must not be changeable ---');
 
   const noAuth = await post(`/booking/${ID}/paid`, { token:'nonsense' });
   is('a bad Access assertion never reaches the action', noAuth.status, 403);
+}
+
+console.log('--- writing a note to the team ---');
+{
+  patched = null;
+  const res = await post(`/booking/${ID}/note`, { fields:{ note:'  coeliac, table by the window  ' } });
+  is('writes the note', patched.reservation.teamMessage, 'coeliac, table by the window');
+  is('says so', decodeURIComponent(res.headers.get('location').split('done=')[1]), 'Note saved.');
+
+  patched = null;
+  await post(`/booking/${ID}/note`, { fields:{ note:'x'.repeat(4000) } });
+  is('and will not take an essay', patched.reservation.teamMessage.length, NOTE_LIMIT);
+
+  patched = null;
+  await post(`/booking/${ID}/note`, { fields:{ note:'' } });
+  is('clearing it is allowed', patched.reservation.teamMessage, '');
+}
+
+console.log('--- the page decides what to offer; the route decides what to do ---');
+{
+  // The button is never drawn on a cancelled booking, but a form post does not
+  // have to have come from a page we drew.
+  onDisk = { status:'CANCELED' };
+  patched = null;
+  const res = await post(`/booking/${ID}/paid`);
+  is('marking a cancelled booking paid is refused', patched, null);
+  is('and it says why rather than pretending', /failed=/.test(res.headers.get('location')), true);
+
+  patched = null;
+  await post(`/booking/${ID}/restore`);
+  is('but putting it back is exactly what it allows', patched.reservation.status, 'RESERVED');
+
+  patched = null;
+  await post(`/booking/${ID}/note`, { fields:{ note:'rang to say sorry' } });
+  is('and a note is welcome on it too', patched.reservation.teamMessage, 'rang to say sorry');
+
+  onDisk = { status:'RESERVED' };
+  patched = null;
+  await post(`/booking/${ID}/restore`);
+  is('while restoring a live booking is refused', patched, null);
 }
 
 console.log('--- what somebody who is not signed in is told ---');

@@ -16,7 +16,7 @@ import { monthShell, monthBody } from './views/month.js';
 import { dayShell, dayBody } from './views/day.js';
 import { listShell, listBody, KINDS } from './views/list.js';
 import { page, pageHead, pageTail, skeleton, RETIRE_SKELETON, escape } from './views/layout.js';
-import { ACTIONS } from './actions.js';
+import { ACTIONS, permits } from './actions.js';
 import {
   localDate, localMonth, monthWindow, dayWindow, isValidMonth, isValidDate,
 } from './time.js';
@@ -85,7 +85,8 @@ async function act(request, url, env, staff) {
 
   try {
     const bookings = new WixBookings(env);
-    await bookings.apply(id, action.changes);
+    const changes = action.from ? action.from(form) : action.changes;
+    await bookings.apply(id, changes, (booking) => permits(booking, name));
     // Until there is a database of our own to write to, the log is the audit
     // trail: who did what, to which booking.
     console.log(JSON.stringify({ action: name, booking: id, by: staff.email }));

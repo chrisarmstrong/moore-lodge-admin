@@ -1,7 +1,7 @@
 import { escape } from './layout.js';
 import { dateLabel, shiftDate, localDate, localMonth, WEEKDAY_INITIALS } from '../time.js';
 import { statusLabel, paymentLabel, PAYMENT, STATUS, DISPOSITION } from '../domain.js';
-import { availableFor } from '../actions.js';
+import { availableFor, permits, NOTE_LIMIT } from '../actions.js';
 
 /** The part of the day page that needs no data — flushed while Wix answers. */
 export function dayShell({ date }) {
@@ -148,18 +148,23 @@ export function bookingRow(booking, back = '/') {
     ? `<p class="note"><b>Note to team:</b> ${escape(booking.teamMessage)}</p>`
     : '';
 
+  // Notes come before the disclosure, not after it. They are the reason somebody
+  // opens this page in a kitchen, so they stay in the open and stay put; a
+  // control that pushed them down the card every time it was opened made the
+  // one thing that must not move the one thing that moved.
   return `<div class="booking${inProgress ? ' dim' : ''}${abandoned ? ' chase' : ''}">
     <div class="party">${booking.partySize}</div>
     <div class="line">
       <span class="who">${escape(booking.guestName)}</span>
       <span class="tags">${tags.join('')}</span>
     </div>
+    ${notes}${teamMessage}
     <details class="reveal">
       <summary>Details</summary>
       <div class="contacts">${contact.join('')}</div>
       ${actions(booking, back)}
+      ${noteField(booking, back)}
     </details>
-    ${notes}${teamMessage}
   </div>`;
 }
 
@@ -171,6 +176,28 @@ export function bookingRow(booking, back = '/') {
 function offDiaryCue(date, count) {
   return `<a class="cue quiet" href="/called-off/${date}">${count === 1 ? '1 called off' : `${count} called off`}
     <span class="cue-sub">cancelled or a no show &rsaquo;</span></a>`;
+}
+
+/**
+ * The team's own note, and the only writing here that is prose.
+ *
+ * It is deliberately not the guest's answers above it. Those are what the guest
+ * said about their own allergies, and a back office that can quietly rewrite
+ * them is a back office that can put words in a guest's mouth about something
+ * that matters. A change phoned in later belongs here, beside what they
+ * originally said, not on top of it.
+ */
+function noteField(booking, back) {
+  if (!permits(booking, 'note')) return '';
+  const id = `note-${escape(booking.id)}`;
+
+  return `<form class="notefield" method="post" action="/booking/${escape(booking.id)}/note">
+    <label for="${id}">Note to team</label>
+    <textarea id="${id}" name="note" rows="2" maxlength="${NOTE_LIMIT}"
+      placeholder="Anything the team should know">${escape(booking.teamMessage || '')}</textarea>
+    <input type="hidden" name="back" value="${escape(back)}">
+    <button type="submit" class="act">Save note</button>
+  </form>`;
 }
 
 function chaseCue(date, count) {
