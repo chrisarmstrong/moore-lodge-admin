@@ -46,4 +46,6 @@ write('settle-month', listShell({ kind: 'settle', period: month }),
   listBody({ kind: 'settle', period: month, sittings: all, back: `/settle/${month}` }));
 write('chase', listShell({ kind: 'chase', period: month }),
   listBody({ kind: 'chase', period: month, sittings: all, back: `/chase/${month}` }));
+write('called-off', listShell({ kind: 'called-off', period: today }),
+  listBody({ kind: 'called-off', period: today, sittings: daySittings, back: `/called-off/${today}` }));
 console.log('wrote', out);

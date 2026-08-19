@@ -105,7 +105,7 @@ function readFlash(url) {
 /** Only ever come back to a page of ours, never wherever a form field says. */
 function safeReturn(value, url) {
   const candidate = typeof value === 'string' ? value : '';
-  return /^\/(day|calendar|settle|chase)\/[\w-]+$/.test(candidate) ? candidate : '/';
+  return /^\/(day|calendar|settle|chase|called-off)\/[\w-]+$/.test(candidate) ? candidate : '/';
 }
 
 async function route(url, env, staff, ctx) {
@@ -144,7 +144,7 @@ async function route(url, env, staff, ctx) {
     });
   }
 
-  const listMatch = url.pathname.match(/^\/(settle|chase)\/(\d{4}-\d{2}(?:-\d{2})?)\/?$/);
+  const listMatch = url.pathname.match(/^\/(settle|chase|called-off)\/(\d{4}-\d{2}(?:-\d{2})?)\/?$/);
   if (listMatch) {
     const [, kind, period] = listMatch;
     const monthly = isValidMonth(period);

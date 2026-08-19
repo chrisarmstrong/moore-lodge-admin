@@ -166,6 +166,10 @@ const cases = [
   mk({ guestName:'No name given', status:STATUS.held, payment:PAYMENT.unpaid, partySize:2 }),
   // still in checkout right now
   mk({ guestName:'Live One', email:'live@example.com', status:STATUS.awaitingPayment, payment:PAYMENT.unpaid, partySize:2, createdAt:justNow }),
+  // somebody pressed cancel — off the diary, but findable and reversible
+  mk({ guestName:'Called Off', email:'off@example.com', status:STATUS.cancelled, payment:PAYMENT.unpaid, partySize:4 }),
+  // and somebody pressed no show, which is the same door
+  mk({ guestName:'Never Came', phone:'+447700900123', status:STATUS.noShow, payment:PAYMENT.paid, partySize:2 }),
 ];
 
 const grouped = groupIntoSittings(cases, experiences, NOW);
@@ -188,10 +192,39 @@ is('and the guests behind them', sit.abandonedGuests, 5);
 is('in-progress counted apart', sit.inProgress, 2);
 is('covers unaffected by any of it', sit.covers, 5);
 
+// A cancellation must not be read as an attempt somebody gave up on. It never
+// touches `bookings`, so `classify` never sees it and never labels it "chase".
+const off = sit.calledOff.map(b => b.guestName);
+is('a cancellation is off the diary', names.includes('Called Off'), false);
+is('and off the chase list', aside.includes('Called Off'), false);
+is('but kept where it can be found', off.includes('Called Off'), true);
+is('a no show lands in the same place', off.includes('Never Came'), true);
+// Archiving in Wix means somebody has dealt with it. It stays gone.
+const archived = groupIntoSittings(
+  [mk({ guestName:'Filed Away', status:STATUS.cancelled, payment:PAYMENT.unpaid, partySize:2, archived:true })],
+  experiences, NOW,
+);
+is('an archived cancellation stays gone', archived.size, 0);
+is('counted as groups', sit.offDiary, 2);
+is('with the guests behind them', sit.offDiaryGuests, 6);
+is('and never counted as abandoned', sit.abandoned, 1);
+
 const sum = monthSummary(grouped);
 is('month abandoned is only the lost one', sum.abandoned, 1);
 is('month abandoned guests', sum.abandonedGuests, 5);
 is('month hidden tracked', sum.hidden, 3);
+is('month counts what was called off', sum.offDiary, 2);
+is('and the guests', sum.offDiaryGuests, 6);
+
+// A sitting that exists only because everything at it was called off was never
+// a sitting anybody ran; counting its seats would drop occupancy for the month.
+const offOnly = groupIntoSittings(
+  [mk({ guestName:'Only One', status:STATUS.cancelled, payment:PAYMENT.unpaid, partySize:2, startsAt:new Date('2026-08-07T11:30:00Z') })],
+  experiences, NOW,
+);
+is('a wholly cancelled sitting is not a sitting', monthSummary(offOnly).sittings, 0);
+is('nor does it offer seats', monthSummary(offOnly).seatsOffered, 0);
+is('but it is still reachable', offOnly.get('2026-08-07')[0].calledOff.length, 1);
 
 const dayHtml = render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings:[sit] }));
 is('the day never names an abandoned guest', dayHtml.includes('Lost Soul'), false);
@@ -209,6 +242,13 @@ const monthChase = listBody({ kind:'chase', period:'2026-08', sittings:[sit, sit
 is('a month list rules off the day', monthChase.includes('Thursday 6 August<'), true);
 is('and writes that date once, not per sitting', monthChase.split('dayrule').length - 1, 1);
 is('a day list does not repeat the date', chaseHtml.includes('dayrule'), false);
+
+const offHtml = listBody({ kind:'called-off', period:'2026-08-06', sittings:[sit], back:'/called-off/2026-08-06' });
+is('the called-off list names them', offHtml.includes('Called Off') && offHtml.includes('Never Came'), true);
+is('and offers the way back', offHtml.includes('/restore'), true);
+is('it does not offer to take a payment', offHtml.includes('/paid'), false);
+is('the day points at it', dayHtml.includes('/called-off/2026-08-06'), true);
+is('the chase list is not where they went', chaseHtml.includes('Called Off'), false);
 
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);

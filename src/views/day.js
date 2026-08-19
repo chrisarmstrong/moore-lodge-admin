@@ -35,10 +35,12 @@ export function dayBody({ date, sittings, back = `/day/${date}` }) {
   // is just noise — the abandoned cue below already accounts for them.
   const real = sittings.filter((sitting) => sitting.bookings.length > 0);
   const abandonedAll = sittings.reduce((total, sitting) => total + sitting.abandoned, 0);
+  const offDiary = sittings.reduce((total, sitting) => total + sitting.offDiary, 0);
 
   if (real.length === 0) {
+    const cues = `${abandonedAll ? chaseCue(date, abandonedAll) : ''}${offDiary ? offDiaryCue(date, offDiary) : ''}`;
     return `<p class="empty">Nothing booked for this day.</p>
-      ${abandonedAll ? `<div class="cues">${chaseCue(date, abandonedAll)}</div>` : ''}`;
+      ${cues ? `<div class="cues">${cues}</div>` : ''}`;
   }
 
   const totalCovers = real.reduce((total, sitting) => total + sitting.covers, 0);
@@ -47,10 +49,11 @@ export function dayBody({ date, sittings, back = `/day/${date}` }) {
 
   const summary = `<p class="daysum">${totalCovers} ${totalCovers === 1 ? 'guest' : 'guests'} across
     ${real.length} ${real.length === 1 ? 'sitting' : 'sittings'}.</p>
-    ${toSettle || abandonedAll ? `<div class="cues">
+    ${toSettle || abandonedAll || offDiary ? `<div class="cues">
       ${toSettle ? `<a class="cue" href="/settle/${date}">${toSettle === 1 ? '1 group' : `${toSettle} groups`} to settle
         <span class="cue-sub">${toSettleGuests} ${toSettleGuests === 1 ? 'guest' : 'guests'} &rsaquo;</span></a>` : ''}
       ${abandonedAll ? chaseCue(date, abandonedAll) : ''}
+      ${offDiary ? offDiaryCue(date, offDiary) : ''}
     </div>` : ''}`;
 
   const body = real.map((sitting) => {
@@ -110,12 +113,22 @@ export function bookingRow(booking, back = '/') {
       <span class="tags">${tags.join('')}</span>
     </div>
     <details class="reveal">
-      <summary>${booking.phone || booking.email ? 'Contact details' : 'Reference'}</summary>
+      <summary>Details</summary>
       <div class="contacts">${contact.join('')}</div>
       ${actions(booking, back)}
     </details>
     ${notes}${teamMessage}
   </div>`;
+}
+
+/**
+ * The way back from a mis-tapped "No show". It is quiet because on most days it
+ * is a footnote, and it is always there when the count isn't zero because the
+ * booking it leads to appears nowhere else at all.
+ */
+function offDiaryCue(date, count) {
+  return `<a class="cue quiet" href="/called-off/${date}">${count === 1 ? '1 called off' : `${count} called off`}
+    <span class="cue-sub">cancelled or a no show &rsaquo;</span></a>`;
 }
 
 function chaseCue(date, count) {

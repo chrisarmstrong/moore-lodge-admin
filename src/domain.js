@@ -24,6 +24,7 @@
  * @property {string}  status        See STATUS.
  * @property {string}  payment       See PAYMENT.
  * @property {string}  source        'online' | 'phone' | 'walk-in'
+ * @property {boolean} archived      Filed away in Wix — dealt with, stay gone.
  * @property {Date}    createdAt     When the attempt was made — decides whether
  *                                   an unfinished one is live or long dead.
  * @property {string} [disposition]  Set by the calendar. See DISPOSITION.
@@ -110,6 +111,17 @@ const LIVE = new Set([STATUS.requested, STATUS.confirmed, STATUS.seated, STATUS.
 const IN_FLIGHT = new Set([STATUS.held, STATUS.awaitingPayment]);
 
 /**
+ * Statuses a person put there. Somebody cancelled, declined or marked a no
+ * show; nobody gave up half way through a checkout.
+ *
+ * The distinction earns its keep because these are the only dead bookings that
+ * can be put back. An abandoned attempt has nothing to restore it to — it never
+ * became a booking. A no show does, and the tap that made it one is easy to
+ * make by accident on a phone.
+ */
+const CALLED_OFF = new Set([STATUS.cancelled, STATUS.declined, STATUS.noShow]);
+
+/**
  * How we recognise the same person across two attempts at the same sitting.
  *
  * Names are unreliable — the live diary has one guest booking as both "Jacqui
@@ -140,6 +152,10 @@ export function holdsASeat(booking) {
 
 export function isInFlight(booking) {
   return IN_FLIGHT.has(booking.status);
+}
+
+export function isCalledOff(booking) {
+  return CALLED_OFF.has(booking.status);
 }
 
 export function isDead(booking) {

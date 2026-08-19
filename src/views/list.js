@@ -29,6 +29,15 @@ export const KINDS = {
     from: (sitting) => sitting.unfinished,
     keep: (booking) => booking.disposition === DISPOSITION.abandoned,
   },
+  'called-off': {
+    title: 'Called off',
+    blurb: 'Cancelled, declined or marked a no show. They are off the diary and out of the counts — '
+      + 'put one back if the tap was a mistake.',
+    empty: 'Nothing called off.',
+    // The bookings a person took off the diary, kept where they can be found.
+    from: (sitting) => sitting.calledOff,
+    keep: () => true,
+  },
 };
 
 export function listShell({ kind, period }) {

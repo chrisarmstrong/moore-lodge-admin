@@ -32,6 +32,10 @@ export const RESERVATIONS = [
     details:{ startDate:'2026-08-06T12:30:00Z', endDate:'2026-08-06T14:30:00Z', partySize:10, experienceId:TEA },
     reservee:{ firstName:'Erin', lastName:'Hen Party', phone:'+447961705118', customFields:{} },
     teamMessage:'using thermal afterwards from 3:30pm - 5pm - they are paying £50pp' },
+  // marked a no show, probably by a thumb — off the diary, must be findable
+  { id:'a1c2e3f4-5b6a-4c7d-8e9f-0a1b2c3d4e5f', status:'NO_SHOW', source:'ONLINE', paymentStatus:'PAID',
+    details:{ startDate:'2026-08-06T11:30:00Z', endDate:'2026-08-06T13:30:00Z', partySize:2, experienceId:TEA },
+    reservee:{ firstName:'Peter', lastName:'Kane', email:'pk@example.com', phone:'+447700900123', customFields:{} } },
   // a different day, so the grid has more than one busy cell
   { id:'336635e6-fbf2-4e52-898b-b7c9e0d33ae2', status:'RESERVED', source:'ONLINE', paymentStatus:'PAID',
     details:{ startDate:'2026-08-28T13:30:00Z', endDate:'2026-08-28T15:30:00Z', partySize:2, experienceId:TEA },

@@ -198,6 +198,7 @@ function toBooking(reservation, labels) {
     status: STATUS_FROM_WIX[reservation.status] || reservation.status,
     payment: PAYMENT_FROM_WIX[reservation.paymentStatus] || PAYMENT.unpaid,
     source: SOURCE_FROM_WIX[reservation.source] || 'online',
+    archived: reservation.archived === true,
   };
 }
 

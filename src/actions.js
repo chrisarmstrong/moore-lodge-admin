@@ -16,9 +16,19 @@
  *    overwrite each other.
  */
 
-import { PAYMENT, STATUS, holdsASeat } from './domain.js';
+import { PAYMENT, STATUS, holdsASeat, isCalledOff } from './domain.js';
 
-/** @typedef {{ label: string, done: string, changes: object, confirm?: string, when?: (b) => boolean }} Action */
+/**
+ * @typedef {object} Action
+ * @property {string}  label
+ * @property {string}  done       Said back to whoever pressed it.
+ * @property {object}  changes    Wix field names — the adapter's business.
+ * @property {string} [confirm]   Shown behind a second tap. Say what it costs.
+ * @property {boolean} [calledOff] True for the one action that works on a
+ *                                 booking already off the diary, false-y for
+ *                                 the rest, which only work on a live one.
+ * @property {(b) => boolean} [when]
+ */
 
 /** @type {Record<string, Action>} */
 export const ACTIONS = {
@@ -50,17 +60,28 @@ export const ACTIONS = {
     label: 'No show',
     done: 'Marked as a no show.',
     changes: { status: 'NO_SHOW' },
-    confirm: 'Mark this booking as a no show? It leaves the diary.',
+    confirm: 'Mark this booking as a no show? It comes off the diary and out of '
+      + 'the counts. You can put it back from Called off.',
     when: (booking) => booking.status === STATUS.confirmed || booking.status === STATUS.seated,
   },
   cancel: {
     label: 'Cancel booking',
     done: 'Booking cancelled.',
     changes: { status: 'CANCELED' },
-    confirm: 'Cancel this booking? Wix may email the guest to tell them, and it cannot be undone here.',
+    confirm: 'Cancel this booking? Wix may email the guest to tell them. It comes '
+      + 'off the diary, and you can put it back from Called off.',
     when: (booking) => booking.status === STATUS.confirmed
       || booking.status === STATUS.requested
       || booking.status === STATUS.seated,
+  },
+  restore: {
+    label: 'Put back on the diary',
+    done: 'Back on the diary.',
+    changes: { status: 'RESERVED' },
+    calledOff: true,
+    // No second tap. This is the way back from a mistake, and friction on the
+    // recovery path is friction in exactly the wrong place — a booking put
+    // back by accident can simply be cancelled again.
   },
 };
 
@@ -73,8 +94,16 @@ export const ACTIONS = {
  * details, which are the useful part of those rows, are there either way.
  */
 export function availableFor(booking) {
-  if (!holdsASeat(booking)) return [];
+  const live = holdsASeat(booking);
+  const calledOff = isCalledOff(booking);
+  if (!live && !calledOff) return [];
+
   return Object.entries(ACTIONS)
+    // Which side of the diary an action works on is declared, never inferred.
+    // "Mark paid" would otherwise match a cancelled booking through its own
+    // `when` and invite recording a payment against something nobody is coming
+    // to — the mirror of the bug that keeps actions off abandoned attempts.
+    .filter(([, action]) => Boolean(action.calledOff) === calledOff)
     .filter(([, action]) => !action.when || action.when(booking))
     .map(([name, action]) => ({ name, ...action }));
 }

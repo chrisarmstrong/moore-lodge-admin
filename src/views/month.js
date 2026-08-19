@@ -31,6 +31,7 @@ export function monthBody({ month, weeks, summary, today }) {
     <div class="stat"><b>${summary.occupancy == null ? '—' : `${summary.occupancy}%`}</b><span>Of seats offered</span></div>
     ${tile(`/chase/${month}`, summary.abandoned, withGuests('Abandoned', summary.abandonedGuests), true)}
     ${tile(`/settle/${month}`, summary.toSettle, withGuests('Groups to settle', summary.toSettleGuests), false)}
+    ${tile(`/called-off/${month}`, summary.offDiary, withGuests('Called off', summary.offDiaryGuests), false)}
   </div>`;
 
   const header = WEEKDAY_INITIALS.map((initial) => `<div class="dow">${initial}</div>`).join('');

@@ -20,11 +20,23 @@ is('an unpaid confirmed booking', names(booking()), ['paid', 'seated', 'noshow',
 is('a paid one offers the undo, not the mark', names(booking({ payment: PAYMENT.paid })),
   ['unpaid', 'seated', 'noshow', 'cancel']);
 is('a seated one can finish', names(booking({ status: STATUS.seated })), ['paid', 'finished', 'noshow', 'cancel']);
-is('a cancelled one offers nothing', names(booking({ status: STATUS.cancelled })), []);
-is('nor does one still in checkout', names(booking({ status: STATUS.awaitingPayment })), []);
+// The way back from a mis-tap. Only the way back: a cancelled booking is unpaid
+// by any reading, and "mark paid" reaching it would record money against
+// somebody who is not coming.
+is('a cancelled one offers only the way back', names(booking({ status: STATUS.cancelled })), ['restore']);
+is('so does a no show', names(booking({ status: STATUS.noShow })), ['restore']);
+is('and a declined request', names(booking({ status: STATUS.declined })), ['restore']);
+is('one still in checkout offers nothing', names(booking({ status: STATUS.awaitingPayment })), []);
+is('nor does one abandoned', names(booking({ status: STATUS.held })), []);
+is('a live booking is never offered the way back',
+  names(booking()).includes('restore'), false);
+is('putting one back does not ask first', ACTIONS.restore.confirm, undefined);
 is('destructive actions ask first',
   Object.entries(ACTIONS).filter(([, a]) => a.confirm).map(([n]) => n), ['noshow', 'cancel']);
 is('cancel warns that Wix may email the guest', /email the guest/.test(ACTIONS.cancel.confirm), true);
+// Both say where the booking went, because both used to be a one-way door.
+is('cancel says where to find it again', /Called off/.test(ACTIONS.cancel.confirm), true);
+is('no show says where to find it again', /Called off/.test(ACTIONS.noshow.confirm), true);
 
 console.log('--- the revision is read fresh, not trusted from the page ---');
 {

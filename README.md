@@ -17,8 +17,9 @@ never take the other down.
 | `/day/YYYY-MM-DD` | A day's sittings, with guests, contact details and dietary notes |
 | `/settle/PERIOD` | Who still owes money, for a day or a month |
 | `/chase/PERIOD` | Who abandoned a booking and left a way to reach them |
+| `/called-off/PERIOD` | Cancellations and no shows, each with a way back |
 | `/today` | Redirects to today — what the home-screen shortcut points at |
-| `POST /booking/:id/:action` | Mark paid, seated, finished, no show, or cancel |
+| `POST /booking/:id/:action` | Mark paid, seated, finished, no show, cancel, or put back |
 | `/whoami` | Who Cloudflare Access thinks you are. Handy while setting it up |
 
 ## The seam
@@ -159,6 +160,18 @@ rather than mixing them in.
 Superseded and stale attempts are dropped everywhere; `/chase` says how many, so
 it is honest about being a filtered view.
 
+There is a third bucket. `sitting.calledOff` holds the bookings a *person* took
+off the diary — cancelled, declined, marked a no show — and it exists because
+those are the only dead bookings that can be put back. They never pass through
+`sitting.bookings`, not even briefly: `classify` reads anything in there holding
+no seat as an unfinished attempt, so a cancellation from last week would come
+back out of it labelled "abandoned — chase". Archived ones are dropped, because
+archiving is Wix's way of saying somebody has already dealt with it.
+
+A sitting that exists only because everything at it was called off is not
+counted as a sitting. It was never one anybody ran, and counting it would put
+its seats in the denominator and quietly drop the month's occupancy.
+
 ## Reading it
 
 A few rules the views hold to, each of which was wrong once.
@@ -167,6 +180,16 @@ A few rules the views hold to, each of which was wrong once.
 arrival · 2 groups, 13 guests" states the two twice and wraps onto a second
 line. The number is a count of groups, the label names that unit and adds the
 head count: "2 / Groups to settle · 13 guests".
+
+**One disclosure, one label.** Every booking's contacts, reference and actions
+sit behind a single `<summary>`, which said "Contact details" or "Reference"
+depending on whether there was a phone number to show. Both undersell what is
+behind it now that the actions are there too, and the branch existed only to
+avoid lying about the contacts. It says "Details".
+
+A closed `<summary>` is a button, and that one is the most-tapped control in the
+app — it gates every write. The tap-target check queried `a[href], button` and
+so never measured it; it had been 40px the whole time.
 
 **A zero leads nowhere.** There is nobody behind it, so a tile at zero keeps its
 place in the row but drops the chevron and the link colour that invite a tap
@@ -207,9 +230,26 @@ phone booking settled on the day and the wrong one for anything else.
 the button was on. That page may be an hour old, and Wix rejects a stale
 revision — rightly, since somebody else may have touched the booking since.
 
-Actions only appear on bookings that hold a seat. An attempt still in checkout,
-or one abandoned last week, shows its contact details and nothing else; offering
-"mark paid" there invites recording a payment against a booking nobody made.
+**Every one-way door has a way back.** "No show" and "Cancel booking" take a
+booking off the diary and out of every count, and until recently that was the
+end of it: the status left `LIVE`, so `availableFor` returned nothing *and* the
+booking vanished from the diary and `/chase` alike. A mis-tap did not just lose
+the booking, it lost any way to find it again short of the Wix dashboard — and
+on a phone that tap is easy to make. `/called-off` is where those bookings live
+now, and `restore` writes the status back to `RESERVED`.
+
+`restore` is the only action with no second tap. Friction on a recovery path is
+friction in exactly the wrong place, and a booking put back by accident can
+simply be cancelled again.
+
+**Which side of the diary an action works on is declared, not inferred.** Each
+action carries `calledOff: true` or nothing, and `availableFor` matches that
+against the booking before any `when` runs. Left to their own predicates, "mark
+paid" would match a cancelled booking — it is unpaid by any reading — and invite
+recording money against somebody who is not coming. That is the same mistake as
+offering actions on an abandoned attempt, which is why an attempt still in
+checkout, or one abandoned last week, still gets none: it shows its contact
+details and nothing else.
 
 ### Why the origin is checked
 

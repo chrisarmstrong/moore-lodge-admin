@@ -9,7 +9,7 @@
 
 import { localDate, localTime, datesInMonth, weekdayIndex } from './time.js';
 import {
-  holdsASeat, isInFlight, isDead, isHidden, contactKeys,
+  holdsASeat, isInFlight, isDead, isHidden, isCalledOff, contactKeys,
   PAYMENT, DISPOSITION, HOLD_MINUTES,
 } from './domain.js';
 
@@ -62,7 +62,15 @@ export function groupIntoSittings(bookings, experiences, now = new Date()) {
   const byDate = new Map();
 
   for (const booking of bookings) {
-    if (isDead(booking)) continue; // cancellations shouldn't crowd the diary
+    // A booking somebody called off is dead to the diary but not gone: it is
+    // the one kind of dead booking that can be put back, so it is kept in a
+    // bucket of its own rather than dropped. Anything else dead — a declined
+    // attempt that never had a name — still goes nowhere.
+    // Archiving is Wix's "this is dealt with" gesture. A cancellation somebody
+    // filed away months ago is not a mis-tap waiting to be undone, and leaving
+    // them in would grow the list with history nobody asked to see again.
+    const calledOff = isCalledOff(booking) && !booking.archived;
+    if (isDead(booking) && !calledOff) continue;
 
     const date = localDate(booking.startsAt);
     const key = booking.startsAt.getTime();
@@ -75,6 +83,7 @@ export function groupIntoSittings(bookings, experiences, now = new Date()) {
         experience: null,
         bookings: [],     // bookings that actually happened — the diary
         unfinished: [],   // abandoned and mid-checkout, for the chase list
+        calledOff: [],    // cancelled, declined or a no show — restorable
         covers: 0,
         capacity: null,
         toSettle: 0,        // groups, not heads — one bill each
@@ -83,9 +92,15 @@ export function groupIntoSittings(bookings, experiences, now = new Date()) {
         abandoned: 0,       // groups again: one phone call each
         abandonedGuests: 0,
         hidden: 0,
+        offDiary: 0,        // groups: one conversation each
+        offDiaryGuests: 0,
       });
     }
-    sittings.get(key).bookings.push(booking);
+    // Never into `bookings`, even briefly: `classify` reads anything in there
+    // that holds no seat as an unfinished attempt, and a cancellation from last
+    // week would come back out of it labelled "abandoned — chase".
+    if (calledOff) sittings.get(key).calledOff.push(booking);
+    else sittings.get(key).bookings.push(booking);
   }
 
   const result = new Map();
@@ -131,6 +146,9 @@ export function groupIntoSittings(bookings, experiences, now = new Date()) {
       sitting.bookings = sitting.bookings.filter(
         (booking) => booking.disposition === DISPOSITION.live,
       );
+
+      sitting.offDiary = sitting.calledOff.length;
+      sitting.offDiaryGuests = sitting.calledOff.reduce((n, b) => n + b.partySize, 0);
     }
     result.set(date, list);
   }
@@ -198,10 +216,20 @@ export function monthSummary(sittingsByDate) {
   let abandonedGuests = 0;
   let inProgress = 0;
   let hidden = 0;
+  let offDiary = 0;
+  let offDiaryGuests = 0;
   let seatsOffered = 0;
 
   for (const list of sittingsByDate.values()) {
     for (const sitting of list) {
+      offDiary += sitting.offDiary;
+      offDiaryGuests += sitting.offDiaryGuests;
+
+      // A sitting that exists only because everything at it was called off was
+      // never a sitting anybody ran. Counting it would add its seats to the
+      // denominator and quietly drop the occupancy figure for the month.
+      if (!sitting.bookings.length && !sitting.unfinished.length) continue;
+
       sittings += 1;
       covers += sitting.covers;
       toSettle += sitting.toSettle;
@@ -223,6 +251,8 @@ export function monthSummary(sittingsByDate) {
     abandonedGuests,
     inProgress,
     hidden,
+    offDiary,
+    offDiaryGuests,
     seatsOffered,
     occupancy: seatsOffered ? Math.round((covers / seatsOffered) * 100) : null,
   };

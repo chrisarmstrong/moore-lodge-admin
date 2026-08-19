@@ -68,6 +68,16 @@ console.log('--- a staff member marking a booking paid ---');
   is('with the revision it read first', patched.reservation.revision, '7');
 }
 
+console.log('--- and putting one back that was called off ---');
+{
+  patched = null;
+  const res = await post(`/booking/${ID}/restore`, { back:'/called-off/2026-08-06' });
+  is('writes the status back to reserved', patched.reservation.status, 'RESERVED');
+  is('and returns to the list it came from',
+    res.headers.get('location').startsWith('/called-off/2026-08-06?done='), true);
+  is('saying so', decodeURIComponent(res.headers.get('location').split('done=')[1]), 'Back on the diary.');
+}
+
 console.log('--- the ways a booking must not be changeable ---');
 {
   patched = null;

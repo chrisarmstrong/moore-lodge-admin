@@ -67,7 +67,11 @@ for (const [name, vp] of [['iPhone SE (375px)', {width:375,height:667}], ['iPhon
 
     const small = await page.evaluate((MIN) => {
       const out = [];
-      for (const el of document.querySelectorAll('a[href], button')) {
+      // A closed <summary> is a button in every way that matters — and the one
+      // on each booking is now the gate to every action there is, so leaving
+      // summaries out of this check left the most-tapped control unmeasured.
+      // An open one is a heading, and .ask deliberately shrinks it to suit.
+      for (const el of document.querySelectorAll('a[href], button, details:not([open]) > summary')) {
         const r = el.getBoundingClientRect();
         if (r.width === 0 && r.height === 0) continue;
         if (el.classList.contains('skip')) continue;

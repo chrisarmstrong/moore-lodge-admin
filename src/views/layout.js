@@ -484,7 +484,7 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
    the reason somebody opens this page in a kitchen. */
 .reveal{grid-column:1/-1;margin:.15rem 0 0}
 .reveal > summary{
-  display:flex;align-items:center;gap:.4rem;min-height:40px;
+  display:flex;align-items:center;gap:.4rem;min-height:var(--tap);
   font-size:.8rem;color:var(--accent);cursor:pointer;list-style:none;
   touch-action:manipulation;
 }
