@@ -143,6 +143,39 @@ does, and the application needs the hostname to exist first — so the order is:
 Then open `/whoami`: it returns the email Access believes you are, which
 confirms the whole chain end to end.
 
+### Signing in with Google
+
+The identity provider is not the access mechanism. Access is the authorisation
+layer; how somebody proves who they are is pluggable underneath it, and out of
+the box that is a one-time code emailed to them. Swapping in Google is a Zero
+Trust change and touches no code here: `src/access.js` verifies a signature
+against the team's JWKS and checks `iss` and `aud`, and Access mints the same
+assertion from the same issuer whichever provider fed it.
+
+1. **Add the provider.** Zero Trust → Settings → Authentication → Login methods.
+   Google needs an OAuth client from Google Cloud — a client id, a secret, and
+   `https://<team-name>.cloudflareaccess.com/cdn-cgi/access/callback` as the
+   authorised redirect URI. Google Workspace additionally wants an admin address
+   and the domain, and gives group membership back in return.
+2. **Scope the policy.** The Allow policy's *Emails* selector becomes *Emails
+   ending in* `@langholmgroup.com` — or, with Workspace, a group.
+3. **Restrict how they get in, if that is the point.** Leaving one-time PIN
+   enabled means an address at the domain can still sign in with an emailed code
+   without ever touching Google. That is the same thing as mailbox access, so it
+   is only worth turning off if Google is carrying something the mailbox is not,
+   like enforced 2FA. The application's own authentication settings are where
+   the provider list is narrowed.
+
+**A domain rule is wider than the list it replaces.** The policy today names
+individual people. Everyone at Langholm Group is a larger set than everyone who
+should read a guest's phone number, allergies and dietary notes, and the rule
+does not know the difference. A Workspace group is the version of this that
+stays as tight as the list — and a policy can carry more than one rule, so an
+address that is not on the domain does not have to be shut out to get there.
+
+It does nothing for the link preview. Access still challenges at the edge, and
+an unfurler still arrives without a cookie whichever provider is behind it.
+
 Access authenticates at the edge; `src/access.js` verifies the assertion again
 inside the Worker, because anyone reaching the origin directly would otherwise
 bypass the edge entirely.
