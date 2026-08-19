@@ -143,6 +143,22 @@ Access authenticates at the edge; `src/access.js` verifies the assertion again
 inside the Worker, because anyone reaching the origin directly would otherwise
 bypass the edge entirely.
 
+## The diary is bookings that happened
+
+`groupIntoSittings` splits a sitting's rows in two. `sitting.bookings` is the
+diary — only bookings that hold a seat. `sitting.unfinished` holds the ones
+somebody gave up on, plus anything still in checkout, and the only page that
+reads it is `/chase`.
+
+This matters more than it sounds. An abandoned attempt sitting in the same list
+as the guests who are actually coming reads as a real booking, and a sitting
+whose rows were all abandoned used to appear on the diary with nobody in it.
+Both are gone. Where a day has abandoned attempts it says so once, with a link,
+rather than mixing them in.
+
+Superseded and stale attempts are dropped everywhere; `/chase` says how many, so
+it is honest about being a filtered view.
+
 ## Changing a booking
 
 `src/actions.js` holds every write Samson can make. Three things about it:

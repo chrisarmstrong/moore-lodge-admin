@@ -16,12 +16,17 @@ export const KINDS = {
     title: 'To settle on arrival',
     blurb: 'Booked and unpaid — most of these are phone bookings that pay on the day.',
     empty: 'Everybody has paid.',
+    // Reads the diary: these are real bookings that owe money.
+    from: (sitting) => sitting.bookings,
     keep: (booking) => holdsASeat(booking) && booking.payment === PAYMENT.unpaid,
   },
   chase: {
     title: 'Abandoned bookings',
-    blurb: 'Reached the payment step, gave up, and never came back. They left a way to reach them.',
+    blurb: 'Reached the payment step, gave up, and never came back. They left a way to reach them, '
+      + 'and they are deliberately kept off the diary — nobody is expecting them.',
     empty: 'Nothing abandoned.',
+    // The only view that reads the attempts that never became bookings.
+    from: (sitting) => sitting.unfinished,
     keep: (booking) => booking.disposition === DISPOSITION.abandoned,
   },
 };
@@ -44,13 +49,21 @@ export function listShell({ kind, period }) {
 }
 
 export function listBody({ kind, sittings, back = '/' }) {
-  const { keep, blurb, empty } = KINDS[kind];
+  const { keep, from, blurb, empty } = KINDS[kind];
 
   const groups = [];
   for (const sitting of sittings) {
-    const matched = sitting.bookings.filter(keep);
+    const matched = from(sitting).filter(keep);
     if (matched.length) groups.push({ sitting, matched });
   }
+
+  // Superseded and stale attempts are dropped everywhere. Saying how many keeps
+  // this page honest about being a filtered view rather than the whole truth.
+  const dropped = sittings.reduce((total, sitting) => total + sitting.hidden, 0);
+  const footnote = kind === 'chase' && dropped
+    ? `<p class="swallowed">${dropped} further ${dropped === 1 ? 'attempt is' : 'attempts are'} not listed:
+       they were retried successfully, or never got as far as a name.</p>`
+    : '';
 
   if (groups.length === 0) return `<p class="empty">${escape(empty)}</p>`;
 
@@ -66,5 +79,6 @@ export function listBody({ kind, sittings, back = '/' }) {
         <span class="count">${escape(localTime(sitting.startsAt))}</span>
       </h2>
       ${matched.map((booking) => bookingRow(booking, back)).join('')}
-    </section>`).join('')}`;
+    </section>`).join('')}
+    ${footnote}`;
 }

@@ -73,7 +73,8 @@ export function groupIntoSittings(bookings, experiences, now = new Date()) {
         startsAt: booking.startsAt,
         time: localTime(booking.startsAt),
         experience: null,
-        bookings: [],
+        bookings: [],     // bookings that actually happened — the diary
+        unfinished: [],   // abandoned and mid-checkout, for the chase list
         covers: 0,
         capacity: null,
         toSettle: 0,        // groups, not heads — one bill each
@@ -119,10 +120,17 @@ export function groupIntoSittings(bookings, experiences, now = new Date()) {
         }
       }
 
-      // Superseded and stale attempts stay out of the diary entirely. They are
-      // counted above so the day can say how many it swallowed, rather than
-      // quietly losing records.
-      sitting.bookings = sitting.bookings.filter((booking) => !isHidden(booking));
+      // The diary is bookings that happened. An attempt somebody gave up on
+      // reads as a real one when it sits in the same list as the guests who are
+      // actually coming, so it moves to `unfinished` and is shown on its own
+      // page instead. Superseded and stale ones go nowhere at all.
+      sitting.unfinished = sitting.bookings.filter(
+        (booking) => booking.disposition === DISPOSITION.abandoned
+          || booking.disposition === DISPOSITION.inProgress,
+      );
+      sitting.bookings = sitting.bookings.filter(
+        (booking) => booking.disposition === DISPOSITION.live,
+      );
     }
     result.set(date, list);
   }

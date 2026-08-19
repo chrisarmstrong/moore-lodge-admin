@@ -4,6 +4,7 @@ import { WixBookings } from '../src/adapters/wix-bookings.js';
 import { groupIntoSittings, monthGrid, monthSummary } from '../src/calendar.js';
 import { monthShell, monthBody } from '../src/views/month.js';
 import { dayShell, dayBody } from '../src/views/day.js';
+import { listBody } from '../src/views/list.js';
 import { STATUS, PAYMENT } from '../src/domain.js';
 import { pageHead, pageTail } from '../src/views/layout.js';
 
@@ -116,7 +117,8 @@ const aug6 = byDate.get('2026-08-06');
 is('two sittings on 6 Aug', aug6.length, 2);
 is('cancelled booking excluded entirely', aug6.flatMap(s => s.bookings).some(b => b.id.startsWith('073b9ffb')), false);
 is('12:30 sitting covers exclude in-flight', aug6[0].covers, 7);
-is('12:30 sitting still lists in-flight', aug6[0].bookings.length, 4);
+is('12:30 diary holds only real bookings', aug6[0].bookings.length, 2);
+is('and keeps the unfinished ones aside', aug6[0].unfinished.length, 2);
 is('one unpaid booking is one bill', aug6[0].toSettle, 1);
 is('its three guests counted separately', aug6[0].toSettleGuests, 3);
 is('mid-checkout guests counted separately', aug6[0].inProgress, 4);
@@ -170,12 +172,16 @@ const grouped = groupIntoSittings(cases, experiences, NOW);
 const sit = grouped.get('2026-08-06')[0];
 const names = sit.bookings.map(b => b.guestName);
 
-is('superseded attempts hidden', names.includes('julie johnston'), false);
-is('phone-matched duplicate hidden', names.includes('Martyn tuttey'), false);
-is('nameless expired hold hidden', names.includes('No name given'), false);
-is('genuinely abandoned still shown', names.includes('Lost Soul'), true);
-is('in-checkout still shown', names.includes('Live One'), true);
-is('successful bookings untouched', sit.bookings.filter(b => b.disposition === 'live').length, 2);
+const aside = sit.unfinished.map(b => b.guestName);
+is('superseded attempts hidden everywhere', [...names, ...aside].includes('julie johnston'), false);
+is('phone-matched duplicate hidden everywhere', [...names, ...aside].includes('Martyn tuttey'), false);
+is('nameless expired hold hidden everywhere', [...names, ...aside].includes('No name given'), false);
+is('abandoned is off the diary', names.includes('Lost Soul'), false);
+is('but kept for the chase list', aside.includes('Lost Soul'), true);
+is('in-checkout is off the diary too', names.includes('Live One'), false);
+is('and kept aside as well', aside.includes('Live One'), true);
+is('the diary is only successful bookings', sit.bookings.every(b => b.disposition === 'live'), true);
+is('two of them', sit.bookings.length, 2);
 is('three hidden: two duplicates and a nameless hold', sit.hidden, 3);
 is('abandoned counts groups to ring', sit.abandoned, 1);
 is('and the guests behind them', sit.abandonedGuests, 5);
@@ -188,9 +194,14 @@ is('month abandoned guests', sum.abandonedGuests, 5);
 is('month hidden tracked', sum.hidden, 3);
 
 const dayHtml = render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings:[sit] }));
-is('day names the abandoned one', dayHtml.includes('Abandoned &middot; chase'), true);
-is('day says what it swallowed', dayHtml.includes('3 expired attempts not shown'), true);
-is('day does not show the duplicate', dayHtml.includes('julie johnston'), false);
+is('the day never names an abandoned guest', dayHtml.includes('Lost Soul'), false);
+is('but points at where they are', dayHtml.includes('/chase/2026-08-06'), true);
+is('the day does not show the duplicate', dayHtml.includes('julie johnston'), false);
+
+const chaseHtml = listBody({ kind:'chase', sittings:[sit], back:'/chase/2026-08-06' });
+is('the chase list names them', chaseHtml.includes('Lost Soul'), true);
+is('and owns up to what it dropped', chaseHtml.includes('further'), true);
+is('the settle list stays on the diary', listBody({ kind:'settle', sittings:[sit] }).includes('Lost Soul'), false);
 
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);

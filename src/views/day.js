@@ -30,18 +30,28 @@ export function dayShell({ date }) {
 }
 
 export function dayBody({ date, sittings, back = `/day/${date}` }) {
-  if (sittings.length === 0) return '<p class="empty">Nothing booked for this day.</p>';
+  // A sitting only exists because something had that start time. If everything
+  // at it was abandoned, there is no sitting to run and an empty card saying so
+  // is just noise — the abandoned cue below already accounts for them.
+  const real = sittings.filter((sitting) => sitting.bookings.length > 0);
+  const abandonedAll = sittings.reduce((total, sitting) => total + sitting.abandoned, 0);
 
-  const totalCovers = sittings.reduce((total, sitting) => total + sitting.covers, 0);
-  const toSettle = sittings.reduce((total, sitting) => total + sitting.toSettle, 0);
-  const toSettleGuests = sittings.reduce((total, sitting) => total + sitting.toSettleGuests, 0);
+  if (real.length === 0) {
+    return `<p class="empty">Nothing booked for this day.</p>
+      ${abandonedAll ? chaseCue(date, abandonedAll) : ''}`;
+  }
+
+  const totalCovers = real.reduce((total, sitting) => total + sitting.covers, 0);
+  const toSettle = real.reduce((total, sitting) => total + sitting.toSettle, 0);
+  const toSettleGuests = real.reduce((total, sitting) => total + sitting.toSettleGuests, 0);
 
   const summary = `<p class="daysum">${totalCovers} ${totalCovers === 1 ? 'guest' : 'guests'} across
-    ${sittings.length} ${sittings.length === 1 ? 'sitting' : 'sittings'}.</p>
+    ${real.length} ${real.length === 1 ? 'sitting' : 'sittings'}.</p>
     ${toSettle ? `<a class="cue" href="/settle/${date}">${toSettle === 1 ? '1 group' : `${toSettle} groups`} to settle on arrival
-      <span class="cue-sub">${toSettleGuests} ${toSettleGuests === 1 ? 'guest' : 'guests'} &rsaquo;</span></a>` : ''}`;
+      <span class="cue-sub">${toSettleGuests} ${toSettleGuests === 1 ? 'guest' : 'guests'} &rsaquo;</span></a>` : ''}
+    ${abandonedAll ? chaseCue(date, abandonedAll) : ''}`;
 
-  const body = sittings.map((sitting) => {
+  const body = real.map((sitting) => {
     const over = sitting.capacity != null && sitting.covers > sitting.capacity;
     const full = sitting.capacity != null && sitting.covers === sitting.capacity;
     const of = sitting.capacity != null ? ` of ${sitting.capacity}` : '';
@@ -53,7 +63,6 @@ export function dayBody({ date, sittings, back = `/day/${date}` }) {
         <span class="count${over ? ' over' : full ? ' full' : ''}">${sitting.covers}${escape(of)} guests${over ? ' &middot; over capacity' : ''}</span>
       </h2>
       ${sitting.bookings.map((booking) => bookingRow(booking, back)).join('')}
-      ${sitting.hidden ? `<p class="swallowed">${sitting.hidden} expired ${sitting.hidden === 1 ? 'attempt' : 'attempts'} not shown — retried successfully, or never named.</p>` : ''}
     </section>`;
   }).join('');
 
@@ -102,6 +111,11 @@ export function bookingRow(booking, back = '/') {
     </details>
     ${notes}${teamMessage}
   </div>`;
+}
+
+function chaseCue(date, count) {
+  return `<a class="cue quiet" href="/chase/${date}">${count === 1 ? '1 abandoned booking' : `${count} abandoned bookings`}
+    <span class="cue-sub">kept off the diary &rsaquo;</span></a>`;
 }
 
 /**

@@ -365,6 +365,7 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 }
 .cue:active{background:var(--press)}
 .cue-sub{color:var(--muted);font-size:.82rem;white-space:nowrap}
+.cue.quiet{color:var(--muted);border-style:dashed}
 @media(max-width:560px){
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   /* An odd number of tiles used to leave a dead grey box on the end. */

@@ -39,11 +39,14 @@ export function monthBody({ month, weeks, summary, today }) {
   const cells = weeks.flat().map((cell) => {
     if (cell.outside) return '<div class="cell outside"></div>';
 
+    // Same rule as the day: a sitting nobody actually booked is not a sitting.
+    const real = cell.sittings.filter((sitting) => sitting.bookings.length > 0);
+
     const classes = ['cell'];
     if (cell.covers > 0) classes.push('busy');
     if (cell.date === today) classes.push('today');
 
-    const pills = cell.sittings.map((sitting) => {
+    const pills = real.map((sitting) => {
       const pillClass = ['pill'];
       if (sitting.covers === 0) {
         pillClass.push('pending');
@@ -60,8 +63,8 @@ export function monthBody({ month, weeks, summary, today }) {
 
     // On a phone the day carries one filled badge — how many people — rather
     // than a second bare number that reads like another date.
-    const compact = cell.sittings.length
-      ? `<span class="compact"><span class="covers ${dayState(cell)}">${cell.covers}</span></span>`
+    const compact = real.length
+      ? `<span class="compact"><span class="covers ${dayState(real, cell.covers)}">${cell.covers}</span></span>`
       : '';
 
     return `<div class="${classes.join(' ')}">
@@ -83,10 +86,10 @@ function groups(label, count, guests) {
 }
 
 /** Colour carries what the row of dots used to say. */
-function dayState(cell) {
-  const withCapacity = cell.sittings.filter((s) => s.capacity != null);
+function dayState(sittings, covers) {
+  const withCapacity = sittings.filter((s) => s.capacity != null);
   if (withCapacity.some((s) => s.covers > s.capacity)) return 'over';
-  if (cell.covers === 0) return 'none';
+  if (covers === 0) return 'none';
   if (withCapacity.length && withCapacity.every((s) => s.covers >= s.capacity)) return 'full';
   return '';
 }
