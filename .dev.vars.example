@@ -1,0 +1,10 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit the real file.
+#
+# Generate the key at https://manage.wix.com/account/api-keys with the
+# Reservations and Gift Card permissions. Site-level calls need it paired with
+# WIX_SITE_ID, which lives in wrangler.jsonc.
+WIX_API_KEY="paste-the-api-key-here"
+
+# Cloudflare Access. Both are shown on the application's page in Zero Trust.
+ACCESS_TEAM_DOMAIN="moorelodge.cloudflareaccess.com"
+ACCESS_AUD="the-application-audience-tag"
