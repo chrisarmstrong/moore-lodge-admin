@@ -23,9 +23,13 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Fonts and the like are public; everything else needs a person behind it.
-    if (url.pathname.startsWith('/fonts/')) {
-      return env.ASSETS ? env.ASSETS.fetch(request) : notFound();
+    // Install metadata and static furniture carry no guest data, and several
+    // of them are fetched by the browser in contexts that can't present the
+    // Access cookie — a manifest fetch is uncredentialed by default, and the
+    // service worker must be reachable to update itself. They stay public.
+    if (isPublicAsset(url.pathname)) {
+      const response = env.ASSETS ? await env.ASSETS.fetch(request) : notFound();
+      return withAssetHeaders(response, url.pathname);
     }
 
     let staff;
@@ -51,6 +55,10 @@ async function route(url, env, staff) {
   if (url.pathname === '/' || url.pathname === '') {
     return redirect(`/calendar/${localMonth()}`);
   }
+
+  // The home-screen shortcut points here rather than at a date that would go
+  // stale the moment it was installed.
+  if (url.pathname === '/today') return redirect(`/day/${localDate()}`);
 
   const monthMatch = url.pathname.match(/^\/calendar\/(\d{4}-\d{2})\/?$/);
   if (monthMatch) {
@@ -99,6 +107,26 @@ async function renderDay(bookings, date) {
   return dayView({ date, sittings: sittingsByDate.get(date) || [] });
 }
 
+const PUBLIC_ASSETS = ['/fonts/', '/icons/'];
+const PUBLIC_FILES = new Set(['/manifest.webmanifest', '/sw.js', '/offline.html']);
+
+function isPublicAsset(pathname) {
+  return PUBLIC_FILES.has(pathname) || PUBLIC_ASSETS.some((prefix) => pathname.startsWith(prefix));
+}
+
+function withAssetHeaders(response, pathname) {
+  const headers = new Headers(response.headers);
+  // The worker script must be revalidated or a bad one sticks around; the rest
+  // never changes in place, so it can be held for a year.
+  headers.set(
+    'cache-control',
+    pathname === '/sw.js' || pathname === '/manifest.webmanifest'
+      ? 'public, max-age=0, must-revalidate'
+      : 'public, max-age=31536000, immutable',
+  );
+  return new Response(response.body, { status: response.status, headers });
+}
+
 function html(markup, status = 200) {
   return new Response(markup, {
     status,
@@ -107,6 +135,7 @@ function html(markup, status = 200) {
       'cache-control': 'no-store',
       'referrer-policy': 'same-origin',
       'x-content-type-options': 'nosniff',
+      'x-frame-options': 'DENY',
     },
   });
 }

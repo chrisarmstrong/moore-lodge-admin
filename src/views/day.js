@@ -8,9 +8,9 @@ export function dayView({ date, sittings }) {
   const today = localDate();
 
   const nav = `<nav class="nav">
-    <a href="/day/${previous}" rel="prev">&larr; Previous day</a>
+    <a href="/day/${previous}" rel="prev" aria-label="Previous day">&larr;<span class="long"> Previous day</span></a>
     ${date === today ? '<span class="here">Today</span>' : `<a href="/day/${today}">Today</a>`}
-    <a href="/day/${next}" rel="next">Next day &rarr;</a>
+    <a href="/day/${next}" rel="next" aria-label="Next day"><span class="long">Next day </span>&rarr;</a>
     <span class="spacer"></span>
     <a href="/calendar/${localMonth(new Date(`${date}T12:00:00Z`))}">Month</a>
   </nav>`;
@@ -70,11 +70,14 @@ function bookingRow(booking) {
   }
   if (booking.source !== 'online') tags.push(`<span class="tag">${escape(booking.source)}</span>`);
 
+  // Only things worth aiming a thumb at become chips. The reference and the
+  // absence of an email are facts to read, not buttons to press, so they sit
+  // with the tags rather than taking a row each.
   const contact = [];
   if (booking.phone) contact.push(`<a href="tel:${escape(booking.phone)}">${escape(booking.phone)}</a>`);
   if (booking.email) contact.push(`<a href="mailto:${escape(booking.email)}">${escape(booking.email)}</a>`);
-  else contact.push('<span>No email</span>');
-  contact.push(`<span>${escape(booking.reference)}</span>`);
+  if (!booking.email) tags.push('<span class="tag">No email</span>');
+  tags.push(`<span class="ref">${escape(booking.reference)}</span>`);
 
   const notes = booking.notes
     .map((note) => `<p class="note"><b>${escape(note.label)}:</b> ${escape(note.value)}</p>`)
@@ -87,7 +90,8 @@ function bookingRow(booking) {
   return `<div class="booking${inProgress ? ' dim' : ''}${abandoned ? ' chase' : ''}">
     <div class="party">${booking.partySize}</div>
     <div class="who">${escape(booking.guestName)}</div>
-    <div class="meta">${contact.join('')}${tags.join('')}</div>
+    ${contact.length ? `<div class="contacts">${contact.join('')}</div>` : ''}
+    <div class="tags">${tags.join('')}</div>
     ${notes}${teamMessage}
   </div>`;
 }

@@ -4,7 +4,11 @@
   "type": "module",
   "scripts": {
     "test": "node test/time.test.mjs && node test/adapter.test.mjs && node test/access.test.mjs",
+    "test:mobile": "node test/pwa.test.mjs && node test/access-cache.test.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
   }
 }

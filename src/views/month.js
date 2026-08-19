@@ -6,12 +6,21 @@ export function monthView({ month, weeks, summary, today }) {
   const next = shiftMonth(month, 1);
   const thisMonth = localMonth();
 
+  // Long labels wrap onto a second row of 48px buttons on a phone, which eats
+  // the top of the calendar. Both are rendered and CSS picks one.
+  const label = (iso) => {
+    const long = monthLabel(iso);
+    return `<span class="long">${escape(long)}</span><span class="short">${escape(long.slice(0, 3))}</span>`;
+  };
+
   const nav = `<nav class="nav">
-    <a href="/calendar/${previous}" rel="prev">&larr; ${escape(monthLabel(previous))}</a>
-    ${month === thisMonth ? '<span class="here">This month</span>' : `<a href="/calendar/${thisMonth}">This month</a>`}
-    <a href="/calendar/${next}" rel="next">${escape(monthLabel(next))} &rarr;</a>
+    <a href="/calendar/${previous}" rel="prev" aria-label="${escape(monthLabel(previous))}">&larr; ${label(previous)}</a>
+    ${month === thisMonth
+      ? '<span class="here">This month</span>'
+      : `<a href="/calendar/${thisMonth}"><span class="long">This month</span><span class="short">Now</span></a>`}
+    <a href="/calendar/${next}" rel="next" aria-label="${escape(monthLabel(next))}">${label(next)} &rarr;</a>
     <span class="spacer"></span>
-    <a href="/day/${today}">Today's covers</a>
+    <a href="/day/${today}"><span class="long">Today's covers</span><span class="short">Today</span></a>
   </nav>`;
 
   const stats = `<div class="stats">
@@ -55,10 +64,24 @@ export function monthView({ month, weeks, summary, today }) {
       return `<span class="${pillClass.join(' ')}">${escape(sitting.time)} <b>${sitting.covers}${of}</b></span>`;
     }).join('');
 
+    // Seven columns on a 390px screen leaves about 45px a cell — not enough for
+    // "12:30 8/15", which truncated to "12:3…" and told nobody anything. On a
+    // phone the cell carries the day's total and a mark per sitting, the way a
+    // native calendar collapses events to dots, and the detail is one tap away.
+    const dots = cell.sittings.map((sitting) => {
+      const state = sitting.capacity != null && sitting.covers > sitting.capacity ? 'over'
+        : sitting.capacity != null && sitting.covers >= sitting.capacity ? 'full'
+        : sitting.covers === 0 ? 'pending' : '';
+      return `<i class="dot ${state}"></i>`;
+    }).join('');
+    const compact = cell.covers || cell.sittings.length
+      ? `<span class="compact"><b>${cell.covers}</b><span class="dots">${dots}</span></span>`
+      : '';
+
     return `<div class="${classes.join(' ')}">
       <span class="n">${cell.day}</span>
-      ${pills}
-      ${cell.sittings.length ? `<a class="open" href="/day/${cell.date}" aria-label="${escape(cell.date)}, ${cell.covers} guests"></a>` : ''}
+      ${pills}${compact}
+      <a class="open" href="/day/${cell.date}" aria-label="${escape(cell.date)}${cell.covers ? `, ${cell.covers} guests` : ', nothing booked'}"></a>
     </div>`;
   }).join('');
 

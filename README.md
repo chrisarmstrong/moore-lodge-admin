@@ -46,6 +46,35 @@ npm test
 stubbed transport, and the Access verification against a generated RSA keypair —
 real signatures, and every way a request should be turned away.
 
+`npm run test:mobile` drives a real browser at phone viewports: no horizontal
+scroll, every tap target at least 44px, the install metadata, and the service
+worker actually caching, serving offline, and — the one that matters — throwing
+the cached diary away when Access stops recognising the session. It needs
+`npm install`; set `CHROMIUM` to a browser binary to skip Playwright's download.
+
+## On a phone
+
+Samson is installed to a home screen and is expected to behave like an app.
+
+**The cache holds guest data.** Cached pages carry names, phone numbers, email
+addresses and dietary requirements, which is the price of the diary opening in a
+kitchen with no signal. It is only worth paying because `public/sw.js` throws
+that cache away the moment Access bounces a request to the login page. Anything
+that changes caching in that file needs to keep that promise.
+
+**Navigations are network-first.** A diary that is quietly out of date is worse
+than one that takes a moment. Cached pages only appear when the network fails,
+and they say so in a banner rather than passing themselves off as current.
+
+**The manifest link carries `crossorigin="use-credentials"`.** Manifests are
+fetched without cookies by default; behind Access that fetch is answered with a
+login page and the app silently refuses to install.
+
+**Nothing in the calendar grid may set a width.** Seven columns on a 375px
+screen means about 45px each. `grid-template-columns: repeat(7, minmax(0, 1fr))`
+is what stops a wide cell pushing the page sideways — a plain `1fr` will not
+shrink below its content and breaks the whole layout out of the viewport.
+
 ### Configuration
 
 `WIX_API_KEY` is the only secret: `npx wrangler secret put WIX_API_KEY`.
