@@ -49,7 +49,7 @@ export function page(opts) {
 /** Absolute, because Open Graph will not take a relative image. */
 const SITE = 'https://samson.moorelodge.co.uk';
 
-export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev', flash = null, wide = false }) {
+export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev', flash = null, wide = false, split = false }) {
   return `<!doctype html>
 <html lang="en-GB">
 <head>
@@ -112,7 +112,7 @@ ${IOS_SPLASH}
 </header>
 <p class="stale" id="stale" hidden></p>
 ${flash ? `<p class="flash${flash.ok ? '' : ' bad'}" role="status">${escape(flash.text)}</p>` : ''}
-<main id="main"${wide ? ' class="wide"' : ''}>
+<main id="main"${wide || split ? ` class="${[wide && 'wide', split && 'split'].filter(Boolean).join(' ')}"` : ''}>
   ${titlebar || `<div class="head"><h1>${escape(heading)}</h1>${sub ? `<p class="sub">${escape(sub)}</p>` : ''}</div>`}
   ${nav}`;
 }
@@ -389,6 +389,67 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .stat.link span{color:var(--accent)}
 .stat.link:active{background:var(--sunk)}
 .stat.quiet b{color:var(--muted)}
+
+/* The day beside its month, once there is room for both — landscape tablet and
+   up. Below that the planner is not shown at all: a 40px cell is a poor tap
+   target on a phone, and the month view is one tap away regardless. */
+.planner{display:none}
+
+@media(min-width:62rem){
+  /* main itself is the grid, so the title and its arrows sit in the left column
+     with the calendar rather than floating centred over both — and because they
+     are already inside main, they keep going out with the first flush. */
+  /* auto auto 1fr, not three autos: the detail column spans all three rows, and
+     a spanning item distributes its height across every auto track it covers —
+     which pushed the title and the nav apart by a third of the day's length
+     each. Only the last track may grow, and it is the one the planner sticks in. */
+  main.split{
+    display:grid;grid-template-columns:16rem minmax(0,1fr);
+    grid-template-rows:auto auto 1fr;column-gap:2.5rem;
+  }
+  main.split > .titlebar{grid-area:1/1;padding-top:0}
+  main.split > .titlebar h1{font-size:1.5rem}
+  main.split > .subnav{grid-area:2/1;justify-content:flex-start;gap:1rem;margin-bottom:.75rem}
+  /* align-self:start matters as much as the sticky does. A grid item stretches
+     to its area by default, so the planner's own box became the full 800px of
+     row 3 — taller than a landscape tablet, which is precisely the case where
+     a sticky element cannot stay wholly on screen. Sized to its content, it
+     travels inside that tall area instead of being it. */
+  main.split > .planner{display:block;grid-area:3/1;align-self:start;position:sticky;top:1rem}
+  /* Spanning all three rows makes the last one absorb the remaining height,
+     which is what gives the sticky planner a tall enough box to travel in. */
+  main.split > .detail{grid-area:1/2/4/3;min-width:0}
+}
+
+.pgrid{
+  display:grid;grid-template-columns:repeat(7,minmax(0,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);
+}
+.pdow{
+  background:var(--ground);color:var(--muted);font-size:.62rem;text-align:center;
+  padding:.3rem 0;letter-spacing:.04em;
+}
+.pcell{
+  background:var(--surface);min-height:2.6rem;padding:.25rem 0 .2rem;
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:.05rem;
+  text-decoration:none;color:var(--ink);touch-action:manipulation;
+}
+.pcell.outside{background:var(--sunk)}
+.pcell:hover{background:var(--press)}
+.pn{font-size:.72rem;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums}
+.pcovers{
+  font-family:var(--display);font-size:.8rem;line-height:1;color:var(--accent);
+  font-variant-numeric:tabular-nums;
+}
+/* Today is a fact about the date; the day being read is a fact about the page.
+   They are different things and a day can be both, so they cannot share a mark. */
+.pcell.now .pn{color:var(--accent);font-weight:600}
+.pcell.here{background:var(--accent)}
+.pcell.here .pn,.pcell.here .pcovers{color:var(--ground)}
+.pall{
+  display:flex;align-items:center;justify-content:center;min-height:var(--tap);
+  margin-top:.5rem;font-size:.8rem;color:var(--accent);text-decoration:none;
+}
 
 .daysum{margin:0 0 .75rem;color:var(--muted);font-size:.9rem}
 /* A day's sittings sit under one date, not one date each. */

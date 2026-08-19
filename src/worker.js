@@ -141,9 +141,21 @@ async function route(url, env, staff, ctx) {
   if (dayMatch) {
     const date = dayMatch[1];
     if (!isValidDate(date)) return badRequest('That is not a date.');
+    // The window is the month, not the day. On a wide screen the day sits beside
+    // a calendar, and asking for the month costs the same single round trip —
+    // the page limit is 100 and a month does not come close — so one query
+    // serves both columns rather than the phone paying for a second one.
+    const month = localMonth(new Date(`${date}T12:00:00Z`));
     return stream({ ...dayShell({ date }), version: buildVersion(env), flash }, 'day', async () => {
-      const { sittingsByDate } = await diary(bookings, dayWindow(date));
-      return dayBody({ date, sittings: sittingsByDate.get(date) || [], back: `/day/${date}` });
+      const { sittingsByDate } = await diary(bookings, monthWindow(month));
+      return dayBody({
+        date,
+        sittings: sittingsByDate.get(date) || [],
+        weeks: monthGrid(month, sittingsByDate),
+        month,
+        today: localDate(),
+        back: `/day/${date}`,
+      });
     });
   }
 

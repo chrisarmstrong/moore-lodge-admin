@@ -1,5 +1,5 @@
 import { escape } from './layout.js';
-import { dateLabel, shiftDate, localDate, localMonth } from '../time.js';
+import { dateLabel, shiftDate, localDate, localMonth, WEEKDAY_INITIALS } from '../time.js';
 import { statusLabel, paymentLabel, PAYMENT, STATUS, DISPOSITION } from '../domain.js';
 import { availableFor } from '../actions.js';
 
@@ -26,10 +26,52 @@ export function dayShell({ date }) {
     ${date === today ? '' : `<a href="/day/${today}">Jump to today</a>`}
   </nav>`;
 
-  return { title: dateLabel(date), heading: dateLabel(date), titlebar, nav };
+  // The day carries a month beside it on a wide screen, so it wants the room.
+  return { title: dateLabel(date), heading: dateLabel(date), titlebar, nav, wide: true, split: true };
 }
 
-export function dayBody({ date, sittings, back = `/day/${date}` }) {
+export function dayBody({ date, sittings, weeks = null, month = null, today = null, back = `/day/${date}` }) {
+  // Siblings of the titlebar rather than wrapped in it: `main` is the grid, so
+  // the date and its arrows land in the same column as the calendar they drive
+  // — and they still go out with the first flush, long before Wix answers.
+  const planner = weeks ? plannerColumn({ weeks, month, date, today: today || localDate() }) : '';
+  return `${planner}<div class="detail">${dayDetail({ date, sittings, back })}</div>`;
+}
+
+/**
+ * The month, beside the day, on a screen with room for both.
+ *
+ * It is navigation first: at this size a cell is about 40px, so it carries the
+ * date and a hint of how loaded the day is, and the month view proper is still
+ * where the numbers are read. CSS decides whether it appears — the server
+ * cannot know the viewport, and the markup is small enough that sending it to a
+ * phone that will not show it costs less than a second request would.
+ */
+function plannerColumn({ weeks, month, date, today }) {
+  const header = WEEKDAY_INITIALS.map((initial) => `<div class="pdow">${initial}</div>`).join('');
+
+  const cells = weeks.flat().map((cell) => {
+    if (cell.outside) return '<div class="pcell outside"></div>';
+
+    const classes = ['pcell'];
+    if (cell.date === date) classes.push('here');
+    if (cell.date === today) classes.push('now');
+    if (cell.covers > 0) classes.push('busy');
+
+    const load = cell.covers > 0 ? `<span class="pcovers">${cell.covers}</span>` : '';
+    const label = `${dateLabel(cell.date)}${cell.covers ? `, ${cell.covers} guests` : ', nothing booked'}`;
+
+    return `<a class="${classes.join(' ')}" href="/day/${cell.date}" aria-label="${escape(label)}"
+      ${cell.date === date ? 'aria-current="page"' : ''}><span class="pn">${cell.day}</span>${load}</a>`;
+  }).join('');
+
+  return `<aside class="planner" aria-label="This month">
+    <div class="pgrid">${header}${cells}</div>
+    <a class="pall" href="/calendar/${month}">Whole month &rsaquo;</a>
+  </aside>`;
+}
+
+function dayDetail({ date, sittings, back }) {
   // A sitting only exists because something had that start time. If everything
   // at it was abandoned, there is no sitting to run and an empty card saying so
   // is just noise — the abandoned cue below already accounts for them.

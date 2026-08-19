@@ -26,7 +26,7 @@ const experiences = await repo.experiences();
 const byDate = groupIntoSittings(bookings, experiences, new Date('2026-08-05T12:00:00Z'));
 const pages = {
   '/': render(monthShell({ month:'2026-08', today:'2026-08-06' }), monthBody({ month:'2026-08', weeks:monthGrid('2026-08', byDate), summary:monthSummary(byDate), today:'2026-08-06' })),
-  '/day': render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings: byDate.get('2026-08-06') })),
+  '/day': render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings: byDate.get('2026-08-06'), weeks:monthGrid('2026-08', byDate), month:'2026-08', today:'2026-08-06' })),
 };
 
 const TYPES = { '.woff2':'font/woff2', '.png':'image/png', '.js':'text/javascript',
@@ -98,6 +98,41 @@ for (const [name, vp] of [['iPhone SE (375px)', {width:375,height:667}], ['iPhon
       clip ? `${clip.top.toFixed(1)}px above, ${clip.bottom.toFixed(1)}px below` : 'no title');
   }
   await ctx.close();
+}
+
+// The day beside its month, where there is room for both
+{
+  for (const [label, vp, expected] of [
+    ['phone', { width:393, height:852 }, false],
+    ['tablet portrait', { width:820, height:1180 }, false],
+    ['tablet landscape', { width:1024, height:768 }, true],
+    ['desktop', { width:1440, height:900 }, true],
+  ]) {
+    const ctx = await browser.newContext({ viewport: vp });
+    const page = await ctx.newPage();
+    await page.goto('http://localhost:8799/day', { waitUntil:'networkidle' });
+
+    const shown = await page.evaluate(() => {
+      const planner = document.querySelector('.planner');
+      return planner ? getComputedStyle(planner).display !== 'none' : false;
+    });
+    check(`${label} — planner ${expected ? 'shown' : 'hidden'}`, shown === expected, `shown: ${shown}`);
+
+    if (expected) {
+      // Sticky is the whole point. Scroll to the very bottom of the day and the
+      // month must still be there, whole — not merely somewhere on the page.
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(80);
+      const seen = await page.evaluate(() => {
+        const r = document.querySelector('.planner').getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, viewport: window.innerHeight };
+      });
+      check(`${label} — the month is still there at the foot of the day`,
+        seen.top >= 0 && seen.bottom <= seen.viewport + 1,
+        `${seen.top.toFixed(0)}–${seen.bottom.toFixed(0)} in ${seen.viewport}`);
+    }
+    await ctx.close();
+  }
 }
 
 // Manifest and install metadata

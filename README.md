@@ -102,6 +102,25 @@ and they say so in a banner rather than passing themselves off as current.
 fetched without cookies by default; behind Access that fetch is answered with a
 login page and the app silently refuses to install.
 
+**The day sits beside its month on a landscape tablet and up.** `main` itself
+is the grid, which is what lets the title and its arrows move into the left
+column with the calendar they drive while still going out with the first flush —
+they are already inside `main`, so nothing had to move into the body to get
+there. Below 62rem the planner is not rendered at all: a 40px cell is a poor tap
+target, and the month view is one tap away regardless.
+
+Two things about that grid are load-bearing, and both were wrong first. The rows
+are `auto auto 1fr`, because the detail column spans all three and a spanning
+item distributes its height across every *auto* track it covers — with three
+autos it pushed the title and the nav a third of the day's length apart. And the
+planner needs `align-self: start`: a grid item stretches to its area, so its own
+box became the full height of the row, which is taller than a landscape tablet
+and therefore the one shape a sticky element cannot keep wholly on screen.
+
+**The day query asks for the month.** It costs the same single round trip —
+`queryAll` pages at 100 and a month does not come close — so one query fills
+both columns rather than the phone paying for a second one it will not show.
+
 **Nothing in the calendar grid may set a width.** Seven columns on a 375px
 screen means about 45px each. `grid-template-columns: repeat(7, minmax(0, 1fr))`
 is what stops a wide cell pushing the page sideways — a plain `1fr` will not

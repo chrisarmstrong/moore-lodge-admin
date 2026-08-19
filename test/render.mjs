@@ -39,7 +39,10 @@ const write = (name, shell, body) =>
 write('month', monthShell({ month, today }),
   monthBody({ month, weeks: monthGrid(month, byDate), summary: monthSummary(byDate), today }));
 write('day', dayShell({ date: today }),
-  dayBody({ date: today, sittings: daySittings, back: `/day/${today}` }));
+  dayBody({
+    date: today, sittings: daySittings, back: `/day/${today}`,
+    weeks: monthGrid(month, byDate), month, today,
+  }));
 write('settle', listShell({ kind: 'settle', period: today }),
   listBody({ kind: 'settle', period: today, sittings: daySittings, back: `/settle/${today}` }));
 write('settle-month', listShell({ kind: 'settle', period: month }),
