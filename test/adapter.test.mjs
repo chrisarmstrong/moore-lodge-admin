@@ -198,10 +198,17 @@ is('the day never names an abandoned guest', dayHtml.includes('Lost Soul'), fals
 is('but points at where they are', dayHtml.includes('/chase/2026-08-06'), true);
 is('the day does not show the duplicate', dayHtml.includes('julie johnston'), false);
 
-const chaseHtml = listBody({ kind:'chase', sittings:[sit], back:'/chase/2026-08-06' });
+const chaseHtml = listBody({ kind:'chase', period:'2026-08-06', sittings:[sit], back:'/chase/2026-08-06' });
 is('the chase list names them', chaseHtml.includes('Lost Soul'), true);
 is('and owns up to what it dropped', chaseHtml.includes('further'), true);
-is('the settle list stays on the diary', listBody({ kind:'settle', sittings:[sit] }).includes('Lost Soul'), false);
+is('the settle list stays on the diary', listBody({ kind:'settle', period:'2026-08-06', sittings:[sit] }).includes('Lost Soul'), false);
+
+// A month list must say which day a 12:30 sitting is, even when every match
+// happens to fall on one day — the period decides that, not the rows.
+const monthChase = listBody({ kind:'chase', period:'2026-08', sittings:[sit, sit], back:'/chase/2026-08' });
+is('a month list rules off the day', monthChase.includes('Thursday 6 August<'), true);
+is('and writes that date once, not per sitting', monthChase.split('dayrule').length - 1, 1);
+is('a day list does not repeat the date', chaseHtml.includes('dayrule'), false);
 
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);

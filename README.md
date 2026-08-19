@@ -159,6 +159,36 @@ rather than mixing them in.
 Superseded and stale attempts are dropped everywhere; `/chase` says how many, so
 it is honest about being a filtered view.
 
+## Reading it
+
+A few rules the views hold to, each of which was wrong once.
+
+**A tile's number and its label must not say the same thing.** "2 / To settle on
+arrival · 2 groups, 13 guests" states the two twice and wraps onto a second
+line. The number is a count of groups, the label names that unit and adds the
+head count: "2 / Groups to settle · 13 guests".
+
+**A zero leads nowhere.** There is nobody behind it, so a tile at zero keeps its
+place in the row but drops the chevron and the link colour that invite a tap
+onto an empty page.
+
+**Whether a heading carries a date is decided by the period, not the rows.**
+A month list whose matches happen to fall on one day still needs to say which
+day, and asking the rows how many days they span gets that exactly backwards.
+The date is then written once, as a rule over that day's sittings — repeated per
+sitting it reads as two separate days.
+
+**The arrows belong to the title.** Pinned to the edges of the 60rem month grid
+they sit a third of a window away from the thing they move. The cluster is
+capped at 32rem once there is room to spare; on a phone it already fills the
+width, so the targets stay where a thumb expects them.
+
+**The h1 clips its own descenders.** The ellipsis needs `overflow: hidden`, and
+that clips at the padding box, which at this line-height falls above the foot of
+a "g". Padding gives the descender room and a negative margin puts the layout
+back. `test/pwa.test.mjs` compares the ink box against the clip box on every
+phone viewport, because computed style reports the clip as fine.
+
 ## Changing a booking
 
 `src/actions.js` holds every write Samson can make. Three things about it:

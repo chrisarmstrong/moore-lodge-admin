@@ -48,7 +48,7 @@ export function listShell({ kind, period }) {
   return { title: `${title} · ${label}`, heading: title, titlebar, nav: '' };
 }
 
-export function listBody({ kind, sittings, back = '/' }) {
+export function listBody({ kind, period, sittings, back = '/' }) {
   const { keep, from, blurb, empty } = KINDS[kind];
 
   const groups = [];
@@ -71,14 +71,33 @@ export function listBody({ kind, sittings, back = '/' }) {
     (total, group) => total + group.matched.reduce((n, booking) => n + booking.partySize, 0), 0,
   );
 
+  // On a single day the date is in the subtitle already, so repeating it on
+  // every heading just pushes the names down. Over a month it is the only thing
+  // that says which day a 12:30 sitting is — and asking the rows how many days
+  // they cover gets that wrong the moment a month happens to have one busy day.
+  const dated = isValidMonth(period);
+
+  // Two sittings on the same afternoon under two identical date headings reads
+  // as two days. The date is a rule over the day's sittings, written once; the
+  // sitting heading stays the time, exactly as it is on the day page.
+  let written = null;
+
   return `<p class="daysum">${guests} ${guests === 1 ? 'guest' : 'guests'} across
     ${groups.length} ${groups.length === 1 ? 'sitting' : 'sittings'}. ${escape(blurb)}</p>
-    ${groups.map(({ sitting, matched }) => `<section class="sitting">
-      <h2>
-        <span>${escape(dateLabel(localDate(sitting.startsAt)))}</span>
-        <span class="count">${escape(localTime(sitting.startsAt))}</span>
-      </h2>
+    ${groups.map(({ sitting, matched }) => {
+    const day = localDate(sitting.startsAt);
+    const rule = dated && day !== written ? `<h2 class="dayrule">${escape(withoutYear(dateLabel(day)))}</h2>` : '';
+    written = day;
+
+    return `${rule}<section class="sitting">
+      <h2><span>${escape(localTime(sitting.startsAt))}</span></h2>
       ${matched.map((booking) => bookingRow(booking, back)).join('')}
-    </section>`).join('')}
+    </section>`;
+  }).join('')}
     ${footnote}`;
+}
+
+/** The year is already in the subtitle; a month list never crosses one. */
+function withoutYear(label) {
+  return label.split(' ').slice(0, 3).join(' ');
 }

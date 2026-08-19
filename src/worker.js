@@ -154,7 +154,7 @@ async function route(url, env, staff, ctx) {
       const window = monthly ? monthWindow(period) : dayWindow(period);
       const { sittingsByDate } = await diary(bookings, window);
       const sittings = [...sittingsByDate.values()].flat().sort((a, b) => a.startsAt - b.startsAt);
-      return listBody({ kind, sittings, back: `/${kind}/${period}` });
+      return listBody({ kind, period, sittings, back: `/${kind}/${period}` });
     });
   }
 

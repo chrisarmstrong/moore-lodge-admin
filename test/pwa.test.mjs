@@ -76,6 +76,22 @@ for (const [name, vp] of [['iPhone SE (375px)', {width:375,height:667}], ['iPhon
       return out;
     }, 44);
     check(`${name} ${path} — every tap target >= 44px tall`, small.length === 0, small.slice(0,4).join(' '));
+
+    // The title ellipsises, which means overflow:hidden, which clips at the
+    // padding box — and that box sat above the foot of a "g". Comparing the
+    // ink against the clip box catches it; computed style never would.
+    const clip = await page.evaluate(() => {
+      const h = document.querySelector('.titlebar h1');
+      if (!h) return null;
+      const box = h.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(h);
+      const ink = range.getBoundingClientRect();
+      return { top: ink.top - box.top, bottom: box.bottom - ink.bottom };
+    });
+    check(`${name} ${path} — the title's descenders are not clipped`,
+      clip && clip.top >= 0 && clip.bottom >= 0,
+      clip ? `${clip.top.toFixed(1)}px above, ${clip.bottom.toFixed(1)}px below` : 'no title');
   }
   await ctx.close();
 }

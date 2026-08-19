@@ -46,7 +46,7 @@ export function page(opts) {
  * be on screen in a few tens of milliseconds while the diary itself is still
  * being fetched. Only the part that needs data waits.
  */
-export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev', flash = null }) {
+export function pageHead({ title, heading, sub, nav = '', titlebar = '', version = 'dev', flash = null, wide = false }) {
   return `<!doctype html>
 <html lang="en-GB">
 <head>
@@ -91,7 +91,7 @@ ${IOS_SPLASH}
 </header>
 <p class="stale" id="stale" hidden></p>
 ${flash ? `<p class="flash${flash.ok ? '' : ' bad'}" role="status">${escape(flash.text)}</p>` : ''}
-<main id="main">
+<main id="main"${wide ? ' class="wide"' : ''}>
   ${titlebar || `<div class="head"><h1>${escape(heading)}</h1>${sub ? `<p class="sub">${escape(sub)}</p>` : ''}</div>`}
   ${nav}`;
 }
@@ -229,9 +229,10 @@ a{color:inherit;touch-action:manipulation}
 .skip:focus{left:0;z-index:20;background:var(--surface);padding:1rem;border:1px solid var(--accent)}
 
 main{
-  max-width:60rem;margin:0 auto;
+  max-width:44rem;margin:0 auto;
   padding:0 max(1rem,var(--left)) calc(4rem + var(--bottom)) max(1rem,var(--right));
 }
+main.wide{max-width:60rem}
 
 .bar{
   /* Centred, not baseline-aligned: the mark is an empty box, so it — not the
@@ -278,8 +279,19 @@ main{
 }
 .titlebar .arrow:active{background:var(--press)}
 .titlebar .title{text-align:center;min-width:0}
-.titlebar h1{font-family:var(--display);font-weight:300;font-size:clamp(1.4rem,5.5vw,2rem);margin:0;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The ellipsis needs overflow:hidden, and overflow:hidden clips at the padding
+   box — which at this line-height sits above the foot of a "g". Padding gives
+   the descender somewhere to go; the negative margin puts the layout back. */
+.titlebar h1{
+  font-family:var(--display);font-weight:300;font-size:clamp(1.4rem,5.5vw,2rem);
+  line-height:1.15;padding:.16em 0;margin:-.16em 0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
 .titlebar .sub{margin:.15rem 0 0;color:var(--muted);font-size:.82rem}
+/* The arrows belong to the title. Pinned to the edges of a 60rem grid they end
+   up a third of a window away from it, so the cluster is capped once there is
+   room to spare — on a phone it already fills the width. */
+@media(min-width:640px){.titlebar{max-width:32rem;margin-inline:auto}}
 .titlebar .sub a{color:var(--accent);text-decoration:none;padding:.25rem 0}
 
 .subnav{display:flex;justify-content:center;gap:1.25rem;margin:0 0 1.25rem}
@@ -355,12 +367,20 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .stat.link{text-decoration:none;display:block;touch-action:manipulation}
 .stat.link span{color:var(--accent)}
 .stat.link:active{background:var(--sunk)}
+.stat.quiet b{color:var(--muted)}
 
 .daysum{margin:0 0 .75rem;color:var(--muted);font-size:.9rem}
+/* A day's sittings sit under one date, not one date each. */
+.dayrule{
+  font-family:var(--display);font-weight:300;font-size:1.05rem;
+  margin:1.5rem 0 .5rem;padding-bottom:.3rem;border-bottom:1px solid var(--rule);
+}
+.dayrule:first-of-type{margin-top:0}
 
+.cues{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 1.25rem}
 .cue{
-  display:flex;align-items:center;justify-content:space-between;gap:.5rem;
-  min-height:var(--tap);padding:0 1rem;margin:0 0 1.25rem;
+  display:flex;align-items:center;justify-content:space-between;gap:.6rem;
+  flex:1 1 14rem;min-height:var(--tap);padding:0 1rem;
   border:1px solid var(--rule);background:var(--surface);color:var(--accent);
   text-decoration:none;font-size:.9rem;border-radius:2px;touch-action:manipulation;
 }
@@ -441,8 +461,9 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   -webkit-user-select:text;user-select:text;
 }
 .booking:last-child{border-bottom:0}
-.booking .party{font-family:var(--display);font-size:1.35rem;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--accent)}
+.booking .party{text-align:right;font-family:var(--display);font-size:1.35rem;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--accent)}
 .booking .who{font-size:1.05rem}
+.booking .line{grid-column:2;display:flex;flex-wrap:wrap;align-items:baseline;gap:.3rem .6rem}
 .booking .contacts{grid-column:2;display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.15rem}
 .booking .contacts a,.booking .contacts span{
   display:inline-flex;align-items:center;min-height:44px;padding:0 .6rem;
@@ -453,7 +474,7 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .booking .contacts a{-webkit-touch-callout:default}
 .booking .contacts a:active{background:var(--press)}
 .ref{font-size:.7rem;letter-spacing:.06em;color:var(--muted);font-variant-numeric:tabular-nums;align-self:center}
-.booking .tags{grid-column:2;display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.15rem}
+.booking .tags{display:flex;gap:.4rem;flex-wrap:wrap}
 .booking .note{grid-column:2;font-size:.9rem;background:var(--warn-wash);border-left:2px solid var(--warn);padding:.45rem .6rem;margin-top:.35rem}
 .booking .note b{font-weight:400;color:var(--warn)}
 .booking.dim{opacity:.55}

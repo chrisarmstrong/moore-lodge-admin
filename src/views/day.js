@@ -38,7 +38,7 @@ export function dayBody({ date, sittings, back = `/day/${date}` }) {
 
   if (real.length === 0) {
     return `<p class="empty">Nothing booked for this day.</p>
-      ${abandonedAll ? chaseCue(date, abandonedAll) : ''}`;
+      ${abandonedAll ? `<div class="cues">${chaseCue(date, abandonedAll)}</div>` : ''}`;
   }
 
   const totalCovers = real.reduce((total, sitting) => total + sitting.covers, 0);
@@ -47,9 +47,11 @@ export function dayBody({ date, sittings, back = `/day/${date}` }) {
 
   const summary = `<p class="daysum">${totalCovers} ${totalCovers === 1 ? 'guest' : 'guests'} across
     ${real.length} ${real.length === 1 ? 'sitting' : 'sittings'}.</p>
-    ${toSettle ? `<a class="cue" href="/settle/${date}">${toSettle === 1 ? '1 group' : `${toSettle} groups`} to settle on arrival
-      <span class="cue-sub">${toSettleGuests} ${toSettleGuests === 1 ? 'guest' : 'guests'} &rsaquo;</span></a>` : ''}
-    ${abandonedAll ? chaseCue(date, abandonedAll) : ''}`;
+    ${toSettle || abandonedAll ? `<div class="cues">
+      ${toSettle ? `<a class="cue" href="/settle/${date}">${toSettle === 1 ? '1 group' : `${toSettle} groups`} to settle
+        <span class="cue-sub">${toSettleGuests} ${toSettleGuests === 1 ? 'guest' : 'guests'} &rsaquo;</span></a>` : ''}
+      ${abandonedAll ? chaseCue(date, abandonedAll) : ''}
+    </div>` : ''}`;
 
   const body = real.map((sitting) => {
     const over = sitting.capacity != null && sitting.covers > sitting.capacity;
@@ -84,7 +86,8 @@ export function bookingRow(booking, back = '/') {
     if (booking.payment === PAYMENT.paid) tags.push('<span class="tag ok">Paid</span>');
     else tags.push(`<span class="tag warn">${escape(paymentLabel(booking.payment))}</span>`);
   }
-  if (booking.source !== 'online') tags.push(`<span class="tag">${escape(booking.source)}</span>`);
+  // How the booking arrived changes nothing anybody does about it, and it was
+  // a third chip on most rows. Whether they can be emailed does matter.
   if (!booking.email) tags.push('<span class="tag">No email</span>');
 
   const contact = [];
@@ -102,8 +105,10 @@ export function bookingRow(booking, back = '/') {
 
   return `<div class="booking${inProgress ? ' dim' : ''}${abandoned ? ' chase' : ''}">
     <div class="party">${booking.partySize}</div>
-    <div class="who">${escape(booking.guestName)}</div>
-    <div class="tags">${tags.join('')}</div>
+    <div class="line">
+      <span class="who">${escape(booking.guestName)}</span>
+      <span class="tags">${tags.join('')}</span>
+    </div>
     <details class="reveal">
       <summary>${booking.phone || booking.email ? 'Contact details' : 'Reference'}</summary>
       <div class="contacts">${contact.join('')}</div>
@@ -114,8 +119,8 @@ export function bookingRow(booking, back = '/') {
 }
 
 function chaseCue(date, count) {
-  return `<a class="cue quiet" href="/chase/${date}">${count === 1 ? '1 abandoned booking' : `${count} abandoned bookings`}
-    <span class="cue-sub">kept off the diary &rsaquo;</span></a>`;
+  return `<a class="cue quiet" href="/chase/${date}">${count === 1 ? '1 abandoned' : `${count} abandoned`}
+    <span class="cue-sub">not in the diary &rsaquo;</span></a>`;
 }
 
 /**
