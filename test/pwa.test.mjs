@@ -64,7 +64,7 @@ const browser = await chromium.launch(LAUNCH);
 for (const [name, vp] of [['iPhone SE (375px)', {width:375,height:667}], ['iPhone 15 (393px)', {width:393,height:852}]]) {
   const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
-  for (const path of ['/','/day']) {
+  for (const path of ['/','/day','/new']) {
     await page.goto(`http://localhost:8799${path}`, { waitUntil:'networkidle' });
     const overflow = await page.evaluate(() => ({
       scrollW: document.documentElement.scrollWidth,

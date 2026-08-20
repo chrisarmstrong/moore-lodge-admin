@@ -679,8 +679,12 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 
 /* Well away from the primary, because a thumb is imprecise and the two
    outcomes are not comparable. */
-.giveup{margin:1.5rem 0 0;font-size:.82rem}
-.giveup a{color:var(--muted)}
+/* A link, not a button — but still something a thumb has to be able to hit. */
+.giveup{
+  display:inline-flex;align-items:center;min-height:44px;
+  font-size:.82rem;color:var(--muted);text-decoration:underline;
+  text-underline-offset:.2em;touch-action:manipulation;
+}
 .act[disabled]{opacity:.6;cursor:default}
 .field{margin:0 0 .9rem;display:flex;flex-direction:column;gap:.3rem}
 .field label{font-size:.72rem;color:var(--muted);letter-spacing:.04em}
@@ -704,8 +708,11 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   background:var(--sunk);border-left:2px solid var(--rule-strong);
 }
 .running b{font-weight:400;color:var(--muted)}
-.submit{display:flex;margin:1.5rem 0 .75rem}
-.submit .act{flex:1;min-height:52px;font-size:.95rem}
+/* The two outcomes at opposite ends of the row: leaving is a quiet link on the
+   left, taking the booking is the weight on the right, and a thumb aimed at
+   either is nowhere near the other. */
+.submit{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:1.5rem 0 .75rem}
+.submit .act{min-height:52px;padding:0 1.4rem;font-size:.95rem}
 .act.primary{background:var(--accent);color:var(--ground);border-color:var(--accent)}
 .error ul{margin:.4rem 0 0;padding-left:1.1rem}
 .error li{margin:.15rem 0}

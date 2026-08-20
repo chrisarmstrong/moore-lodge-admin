@@ -71,10 +71,10 @@ export function newBody({ date, experiences, sittings = [], values = {}, errors 
     </details>
 
     <div class="submit">
+      <a class="giveup" href="/day/${escape(values.date || date)}">Leave without booking</a>
       <button type="submit" class="act primary" data-busy="Taking the booking…">Take the booking</button>
     </div>
     <p class="hint">Recorded unpaid, as the Wix app records a phone booking. Wix may email the guest.</p>
-    <p class="giveup"><a href="/day/${escape(values.date || date)}">Leave without booking</a></p>
   </form>`;
 }
 
