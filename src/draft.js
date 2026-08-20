@@ -12,6 +12,25 @@ import { NOTE_LIMIT } from './actions.js';
 
 export const MAX_PARTY = 60;
 
+/** The chip value that means "none of these — I typed it below". */
+export const OTHER = 'other';
+
+/**
+ * "Ann Blair" is one thing somebody says, so it is one thing they type. Wix
+ * wants the halves apart, which is our problem rather than the caller's.
+ *
+ * The first space is the break, so "Mary Jane Watson" keeps "Jane Watson" as
+ * the surname — wrong about her middle name, right about how she is greeted,
+ * and a great deal better than making somebody decide mid-call.
+ */
+export function splitName(full) {
+  const trimmed = String(full || '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return { firstName: '', lastName: null };
+  const space = trimmed.indexOf(' ');
+  if (space === -1) return { firstName: trimmed, lastName: null };
+  return { firstName: trimmed.slice(0, space), lastName: trimmed.slice(space + 1) };
+}
+
 /**
  * @returns {{ draft: import('./domain.js').BookingDraft|null, errors: string[], values: object }}
  *
@@ -22,15 +41,23 @@ export const MAX_PARTY = 60;
 export function readDraft(form, { experiences = new Map() } = {}) {
   const get = (name) => String(form.get(name) ?? '').trim();
 
+  // A chip carries the whole answer — "12:30|<experience id>", "4" — and the
+  // typed field behind it is the escape hatch for anything the chips do not
+  // cover. Chip first, typing second, so choosing one is never ambiguous.
+  const sitting = get('sitting');
+  const [chipTime, chipExperience] = sitting && sitting !== OTHER ? sitting.split('|') : [];
+  const party = get('party');
+
   const values = {
     date: get('date'),
-    time: get('time'),
-    partySize: get('partySize'),
-    firstName: get('firstName'),
-    lastName: get('lastName'),
+    sitting,
+    time: chipTime ?? get('time'),
+    party,
+    partySize: party && party !== OTHER ? party : get('partySize'),
+    name: get('name'),
     phone: get('phone'),
     email: get('email'),
-    experienceId: get('experienceId'),
+    experienceId: chipTime !== undefined ? (chipExperience || '') : get('experienceId'),
     note: get('note').slice(0, NOTE_LIMIT),
   };
 
@@ -45,7 +72,8 @@ export function readDraft(form, { experiences = new Map() } = {}) {
 
   // Both are required by the API for anything that is not a walk-in, so it is
   // better to say so here than to let Wix say it in its own words.
-  if (!values.firstName) errors.push('A first name is needed.');
+  const { firstName, lastName } = splitName(values.name);
+  if (!firstName) errors.push('A name is needed.');
   if (!values.phone) errors.push('A phone number is needed — it is how the booking is confirmed.');
   else if (values.phone.replace(/\D/g, '').length < 7) errors.push('That phone number looks too short.');
 
@@ -63,8 +91,8 @@ export function readDraft(form, { experiences = new Map() } = {}) {
     draft: {
       startsAt: localToInstant(values.date, values.time),
       partySize,
-      firstName: values.firstName,
-      lastName: values.lastName || null,
+      firstName,
+      lastName,
       phone: values.phone,
       email: values.email || null,
       experienceId: values.experienceId || null,

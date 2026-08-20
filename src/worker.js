@@ -130,11 +130,17 @@ async function take(request, url, env, staff) {
     return html(page({
       ...newShell({ date }),
       version: buildVersion(env),
-      body: newBody({ date, experiences: offerable(experiences), values, errors }),
+      body: newBody({ date, today: localDate(), experiences: offerable(experiences), values, errors }),
     }), 422);
   }
 
   try {
+    // Cheap insurance against the tap somebody makes when Wix is slow.
+    const twin = await bookings.alreadyThere(draft);
+    if (twin) {
+      return redirect(`/day/${localDate(twin.startsAt)}?done=${encodeURIComponent(`${twin.guestName} was already in the diary.`)}`);
+    }
+
     const booking = await bookings.create(draft);
     console.log(JSON.stringify({ action: 'create', booking: booking.id, by: staff.email }));
     const day = localDate(booking.startsAt);
@@ -146,7 +152,7 @@ async function take(request, url, env, staff) {
     return html(page({
       ...newShell({ date }),
       version: buildVersion(env),
-      body: newBody({ date, experiences: offerable(experiences), values, errors: [error.message || 'Wix would not take that booking.'] }),
+      body: newBody({ date, today: localDate(), experiences: offerable(experiences), values, errors: [error.message || 'Wix would not take that booking.'] }),
     }), 502);
   }
 }
@@ -226,7 +232,9 @@ async function route(url, env, staff, ctx) {
 
   const newMatch = url.pathname.match(/^\/new(?:\/(\d{4}-\d{2}-\d{2}))?\/?$/);
   if (newMatch) {
-    const date = newMatch[1] || localDate();
+    // The "another date" picker is a GET form, which can only give a query
+    // string — so both spellings of the same request land here.
+    const date = newMatch[1] || url.searchParams.get('date') || localDate();
     if (!isValidDate(date)) return badRequest('That is not a date.');
     return stream({ ...newShell({ date }), version: buildVersion(env), flash }, 'day', async () => {
       const [{ sittingsByDate }, experiences] = await Promise.all([
@@ -234,7 +242,7 @@ async function route(url, env, staff, ctx) {
         bookings.experiences(),
       ]);
       const sittings = (sittingsByDate.get(date) || []).filter((sitting) => sitting.bookings.length > 0);
-      return newBody({ date, experiences: offerable(experiences), sittings });
+      return newBody({ date, today: localDate(), experiences: offerable(experiences), sittings });
     });
   }
 

@@ -1,6 +1,6 @@
 // Reading a phone booking off a form: the rules, and the hour that Ballymoney
 // and UTC disagree about for half the year.
-import { readDraft, MAX_PARTY } from '../src/draft.js';
+import { readDraft, splitName, MAX_PARTY, OTHER } from '../src/draft.js';
 
 let fail = 0;
 const is = (what, got, want) => {
@@ -12,7 +12,7 @@ const is = (what, got, want) => {
 const EXPERIENCES = new Map([['tea-id', { id:'tea-id', name:'Afternoon Tea' }]]);
 const form = (over = {}) => new URLSearchParams({
   date:'2026-08-06', time:'12:30', partySize:'4',
-  firstName:'Ann', lastName:'Blair', phone:'+44 7700 900123', ...over,
+  name:'Ann Blair', phone:'+44 7700 900123', ...over,
 });
 
 console.log('--- a booking somebody read down the phone ---');
@@ -38,7 +38,7 @@ console.log('--- the same clock face, the other half of the year ---');
 console.log('--- what it will not accept ---');
 {
   const complaint = (over, extra) => readDraft(form(over), extra).errors.join(' | ');
-  is('a missing name', /first name/.test(complaint({ firstName:'' })), true);
+  is('a missing name', /A name is needed/.test(complaint({ name:'' })), true);
   is('a missing phone', /phone number is needed/.test(complaint({ phone:'' })), true);
   is('a phone too short to be one', /too short/.test(complaint({ phone:'123' })), true);
   is('a party of nobody', /How many/.test(complaint({ partySize:'0' })), true);
@@ -53,7 +53,7 @@ console.log('--- what it will not accept ---');
 console.log('--- and what it hands back so nobody retypes a phone call ---');
 {
   const { values, draft } = readDraft(form({ phone:'', note:'  coeliac  ' }));
-  is('everything typed comes back', [values.firstName, values.partySize, values.time], ['Ann', '4', '12:30']);
+  is('everything typed comes back', [values.name, values.partySize, values.time], ['Ann Blair', '4', '12:30']);
   is('trimmed', values.note, 'coeliac');
   is('but no booking was made of it', draft, null);
   // Optional fields become null rather than empty strings: the adapter leaves
@@ -61,6 +61,38 @@ console.log('--- and what it hands back so nobody retypes a phone call ---');
   const bare = readDraft(form()).draft;
   is('an absent email is null, not empty', bare.email, null);
   is('an absent note likewise', bare.teamMessage, null);
+}
+
+console.log('--- one name field, because that is how a name is said ---');
+{
+  is('two words', splitName('Ann Blair'), { firstName:'Ann', lastName:'Blair' });
+  is('one word', splitName('Cher'), { firstName:'Cher', lastName:null });
+  // Wrong about her middle name, right about how she is greeted, and far better
+  // than making somebody choose a box mid-call.
+  is('three words break at the first space', splitName('Mary Jane Watson'), { firstName:'Mary', lastName:'Jane Watson' });
+  is('untidy spacing', splitName('  ann   blair  '), { firstName:'ann', lastName:'blair' });
+  is('nothing at all', splitName(''), { firstName:'', lastName:null });
+  is('the draft carries both halves', readDraft(form({ name:'Ann Blair' })).draft.lastName, 'Blair');
+}
+
+console.log('--- chips answer first, typing is the escape hatch ---');
+{
+  const chipped = readDraft(new URLSearchParams({
+    date:'2026-08-06', sitting:`12:30|tea-id`, party:'4', name:'Ann', phone:'+447700900123',
+    // Stale typed values from the revealed fields must not win over the chips.
+    time:'19:00', partySize:'11', experienceId:'',
+  }), { experiences: new Map([['tea-id', {}]]) });
+  is('the sitting chip sets the time', chipped.draft.startsAt.toISOString(), '2026-08-06T11:30:00.000Z');
+  is('and the experience behind it', chipped.draft.experienceId, 'tea-id');
+  is('the party chip sets the size', chipped.draft.partySize, 4);
+
+  const typed = readDraft(new URLSearchParams({
+    date:'2026-08-06', sitting:OTHER, time:'19:00', experienceId:'',
+    party:OTHER, partySize:'11', name:'Ann', phone:'+447700900123',
+  }));
+  is('choosing "another time" hands back to the typed time', typed.draft.startsAt.toISOString(), '2026-08-06T18:00:00.000Z');
+  is('and a table rather than an experience', typed.draft.experienceId, null);
+  is('"more" hands back to the typed size', typed.draft.partySize, 11);
 }
 
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');

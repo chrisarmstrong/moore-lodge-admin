@@ -194,6 +194,25 @@ const SCRIPT = `
   addEventListener('online', function () { check(); refresh(); });
   addEventListener('offline', check);
   check();
+
+  // Taking a booking is not idempotent and Wix is not instant, so the second
+  // tap somebody makes while wondering whether the first one landed would book
+  // the same party twice. The server checks too — this is only what stops the
+  // tap being worth making, and what says something is happening.
+  addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form || form.method !== 'post') return;
+    var button = form.querySelector('button[type=submit][data-busy]');
+    if (!button) return;
+    if (form.dataset.sent) { event.preventDefault(); return; }
+    form.dataset.sent = '1';
+    // Disabling before the browser serialises the form would drop the button's
+    // own name and value, so it waits for the tick after submission begins.
+    setTimeout(function () {
+      button.disabled = true;
+      button.textContent = button.dataset.busy;
+    }, 0);
+  });
 })();
 `;
 
@@ -595,8 +614,75 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .add:active{background:var(--press)}
 @media(max-width:24rem){.addword{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}}
 
-.book{max-width:34rem}
-.field{margin:0 0 1rem;display:flex;flex-direction:column;gap:.3rem}
+.book,.when{max-width:34rem}
+
+/* Three taps before any typing: when, which sitting, how many. Each is a real
+   answer rather than a picker somebody has to aim at one-handed. */
+.chips{border:0;padding:0;margin:0 0 .9rem;min-width:0}
+.chips legend,.chips .legend{padding:0;margin:0;font-size:.72rem;color:var(--muted);letter-spacing:.04em;margin-bottom:.35rem}
+.chiprow{display:flex;flex-wrap:wrap;gap:.35rem}
+.chip{
+  display:inline-flex;align-items:center;justify-content:center;gap:.4rem;
+  min-height:44px;padding:0 .7rem;
+  border:1px solid var(--rule-strong);border-radius:2px;background:var(--surface);
+  color:var(--ink);text-decoration:none;font-size:.9rem;
+  cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+}
+.chip input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+.chip:active{background:var(--press)}
+/* Sized so one through six and "More" make a single row on a 393px phone: a
+   second row of numbers is a second place to look for a number. */
+.chip.num{min-width:44px;padding:0 .3rem;font-variant-numeric:tabular-nums}
+.chip.num.wider{padding:0 .55rem}
+/* A whole row, because a sitting is a sentence: when, what, and how much room. */
+.chip.wide{width:100%;justify-content:flex-start;margin-bottom:.35rem}
+.chiptime{font-family:var(--display);font-size:1.05rem}
+.chipwhat{flex:1;color:var(--muted);font-size:.85rem}
+.chipleft{font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.chip.spent .chipleft{color:var(--warn)}
+/* Selection is a filled chip, not a tick: it has to be readable at a glance
+   from a phone held at arm's length while somebody is talking. */
+.chip.on,.chip:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--ground)}
+.chip.on .chipwhat,.chip:has(input:checked) .chipwhat,
+.chip.on .chipleft,.chip:has(input:checked) .chipleft{color:var(--ground);opacity:.75}
+.chip:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.chosen{margin:.4rem 0 0;font-size:.8rem;color:var(--muted)}
+
+/* The field behind a chip appears because the chip was chosen, not because a
+   second thing was opened. A disclosure summary costs a whole 48px row to say
+   what the chip beside it already said. */
+.book .reveals,.chips .reveals{display:none}
+.chips:has(input[value="other"]:checked) .reveals.pair{display:grid;margin-top:.6rem}
+.chips:has(input[value="other"]:checked) .reveals.field{display:flex;margin-top:.6rem}
+
+.datepick > summary{list-style:none}
+.datepick > summary::-webkit-details-marker{display:none}
+.datepick[open]{width:100%}
+/* A closed <details> hides its children by not rendering them, which an
+   explicit display on a child is enough to undo — so the picker says so
+   itself rather than trusting the default. */
+.datepick:not([open]) .jump{display:none}
+.jump{display:flex;gap:.5rem;align-items:center;margin-top:.5rem}
+.jump input{
+  font-family:var(--body);font-size:16px;min-height:var(--tap);flex:1;min-width:0;
+  padding:0 .6rem;background:var(--surface);border:1px solid var(--rule-strong);border-radius:2px;color:var(--ink);
+}
+
+.more{margin:0 0 .5rem}
+.more > summary{
+  display:inline-flex;align-items:center;min-height:var(--tap);
+  font-size:.85rem;color:var(--accent);cursor:pointer;list-style:none;touch-action:manipulation;
+}
+.more > summary::-webkit-details-marker{display:none}
+.more > summary::after{content:" ›"}
+.more[open] > summary::after{content:" ⌄"}
+
+/* Well away from the primary, because a thumb is imprecise and the two
+   outcomes are not comparable. */
+.giveup{margin:1.5rem 0 0;font-size:.82rem}
+.giveup a{color:var(--muted)}
+.act[disabled]{opacity:.6;cursor:default}
+.field{margin:0 0 .9rem;display:flex;flex-direction:column;gap:.3rem}
 .field label{font-size:.72rem;color:var(--muted);letter-spacing:.04em}
 .field input,.field select,.field textarea{
   font-family:var(--body);font-size:1rem;color:var(--ink);
@@ -618,7 +704,8 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   background:var(--sunk);border-left:2px solid var(--rule-strong);
 }
 .running b{font-weight:400;color:var(--muted)}
-.submit{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin:1.5rem 0 .75rem}
+.submit{display:flex;margin:1.5rem 0 .75rem}
+.submit .act{flex:1;min-height:52px;font-size:.95rem}
 .act.primary{background:var(--accent);color:var(--ground);border-color:var(--accent)}
 .error ul{margin:.4rem 0 0;padding-left:1.1rem}
 .error li{margin:.15rem 0}

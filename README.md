@@ -407,6 +407,32 @@ already happening.
 rules, and rules want testing without a browser or a network — what comes out is
 a `BookingDraft` and what it knows about Wix is nothing.
 
+**Three taps before any typing.** When, which sitting, how many — chips, not
+pickers. A native date or time control on a phone is a modal wheel somebody has
+to aim at one-handed, and the form used to open two of them before it asked
+anything about the guest. What is left to type is a name and a number, which is
+what a caller actually dictates. Everything down to the phone number fits one
+screen, which is what makes it possible to read the booking back before hanging
+up; `test/pwa.test.mjs` measures that rather than trusting it.
+
+**The sitting chips carry seats remaining**, because mid-call the useful
+sentence is "12:30 is full, I can do you 13:30" — a form that only records the
+answer cannot help somebody find it.
+
+**A chip reveals its own escape hatch.** Choosing "Another time" is what shows
+the time field, via `:has()`. A `<details>` there cost a whole 48px row to say
+what the chip beside it already said.
+
+**One name field.** "Ann Blair" is one thing somebody says, so it is one thing
+they type; `splitName` breaks at the first space. That makes "Mary Jane Watson"
+a Ms Jane Watson, which is wrong about her middle name, right about how she is
+greeted, and much better than asking somebody to choose a box mid-call.
+
+**The date picker is its own form, outside the booking form.** A form inside a
+form is invalid, and the parser resolves it by closing the outer one early —
+which quietly puts most of the booking outside the form that submits it. That
+shipped for exactly one commit and is now a test.
+
 **A first name and a phone number are not optional.** Wix rejects any source but
 `WALK_IN` without them, so the form says so in its own words rather than letting
 the API say it in Wix's.
@@ -429,6 +455,14 @@ in a query string, and retyping a booking mid-phone-call is how the call goes
 badly. Nothing was written, so a refresh repeats nothing. Wix's own refusals —
 a pacing conflict, a full sitting — go on the form in its words, since they are
 worth reading.
+
+**A booking is not idempotent, and Wix is not instant.** The second tap somebody
+makes while wondering whether the first one landed would book the same party
+twice, and nobody would notice until someone read the diary. Two guards: the
+submit button disables itself and says what it is doing, and — because that only
+covers the tap, not a back button or two people taking the same call — `create`
+first asks whether a booking with the same phone number, at the same minute,
+already exists, and says so instead of writing a second one.
 
 **None of this has run against the live API.** The key was revoked, so the
 create path is proved against a stub that pins the request body and nothing

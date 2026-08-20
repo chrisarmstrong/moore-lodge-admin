@@ -33,6 +33,8 @@ let patched = null;
 // What the booking actually is when the write goes to apply itself, which is
 // not necessarily what the page that posted the form believed.
 let onDisk = { status: 'RESERVED' };
+// What a duplicate check would find already sitting in the diary.
+let onTheDay = [];
 let posted = null;
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
@@ -42,6 +44,9 @@ globalThis.fetch = async (url, init = {}) => {
       id:ID, revision:'1', status:'RESERVED', paymentStatus:'NOT_PAID', source:'OFFLINE',
       details:{ startDate:posted.reservation.details.startDate, partySize:posted.reservation.details.partySize },
       reservee:posted.reservation.reservee, createdDate:'2026-08-01T00:00:00Z' } }) };
+  }
+  if (u.includes('/reservations/query')) {
+    return { ok:true, status:200, text: async () => JSON.stringify({ reservations: onTheDay }) };
   }
   if (u.includes('reservation-locations')) {
     return { ok:true, status:200, text: async () => JSON.stringify({ reservationLocations:[{ id:'loc-1', configuration:{} }] }) };
@@ -165,7 +170,7 @@ console.log('--- taking a booking over the phone ---');
   posted = null;
   const body = new URLSearchParams({
     date:'2026-08-06', time:'12:30', partySize:'4',
-    firstName:'Ann', lastName:'Blair', phone:'+447700900123', email:'ann@example.com', note:'window table',
+    name:'Ann Blair', phone:'+447700900123', email:'ann@example.com', note:'window table',
   });
   const res = await worker.fetch(new Request(`${ORIGIN}/new`, {
     method:'POST',
@@ -180,11 +185,47 @@ console.log('--- taking a booking over the phone ---');
   is('carries the location', posted.reservation.details.reservationLocationId, 'loc-1');
   is('the party size', posted.reservation.details.partySize, 4);
   is('the name and number the API insists on', [posted.reservation.reservee.firstName, posted.reservation.reservee.phone], ['Ann', '+447700900123']);
+  is('and the surname it was given as one field', posted.reservation.reservee.lastName, 'Blair');
   is('the note rides along', posted.reservation.teamMessage, 'window table');
   // Status is left out on purpose: the location's approval setting decides
   // between RESERVED and REQUESTED, and we should not assert one over it.
   is('no status is asserted', 'status' in posted.reservation, false);
   is('lands on the day it was booked for', res.headers.get('location').startsWith('/day/2026-08-06?done='), true);
+}
+
+console.log('--- the second tap somebody makes while Wix is thinking ---');
+{
+  // The same party, already written a moment ago by the first tap.
+  onTheDay = [{ id:'11111111-1111-4111-8111-111111111111', status:'RESERVED', source:'OFFLINE',
+    paymentStatus:'NOT_PAID', createdDate:'2026-08-01T00:00:00Z',
+    details:{ startDate:'2026-08-06T11:30:00.000Z', partySize:4 },
+    reservee:{ firstName:'Ann', lastName:'Blair', phone:'07700 900123' } }];
+  posted = null;
+
+  const res = await worker.fetch(new Request(`${ORIGIN}/new`, {
+    method:'POST',
+    headers:{ 'content-type':'application/x-www-form-urlencoded', origin:ORIGIN,
+              'Cf-Access-Jwt-Assertion': await assertion() },
+    // Written in a different format, as somebody would the second time.
+    body:new URLSearchParams({ date:'2026-08-06', time:'12:30', partySize:'4',
+      name:'Ann Blair', phone:'+447700900123' }),
+  }), env, ctx);
+
+  is('the party is not booked twice', posted, null);
+  is('and it says the booking is already there',
+    /already in the diary/.test(decodeURIComponent(res.headers.get('location'))), true);
+
+  // A different party at the same sitting is not a duplicate.
+  posted = null;
+  await worker.fetch(new Request(`${ORIGIN}/new`, {
+    method:'POST',
+    headers:{ 'content-type':'application/x-www-form-urlencoded', origin:ORIGIN,
+              'Cf-Access-Jwt-Assertion': await assertion() },
+    body:new URLSearchParams({ date:'2026-08-06', time:'12:30', partySize:'2',
+      name:'Someone Else', phone:'+447700900999' }),
+  }), env, ctx);
+  is('somebody else at the same sitting still gets booked', posted.reservation.reservee.firstName, 'Someone');
+  onTheDay = [];
 }
 
 console.log('--- a form with something wrong in it ---');
@@ -194,7 +235,7 @@ console.log('--- a form with something wrong in it ---');
     method:'POST',
     headers:{ 'content-type':'application/x-www-form-urlencoded', origin:ORIGIN,
               'Cf-Access-Jwt-Assertion': await assertion() },
-    body:new URLSearchParams({ date:'2026-08-06', time:'12:30', partySize:'4', firstName:'Ann', phone:'' }),
+    body:new URLSearchParams({ date:'2026-08-06', time:'12:30', partySize:'4', name:'Ann', phone:'' }),
   }), env, ctx);
   const page = await res.text();
   is('nothing was written', posted, null);
@@ -210,7 +251,7 @@ console.log('--- a booking form posted from somewhere else ---');
     method:'POST',
     headers:{ 'content-type':'application/x-www-form-urlencoded', origin:'https://evil.example',
               'Cf-Access-Jwt-Assertion': await assertion() },
-    body:new URLSearchParams({ date:'2026-08-06', time:'12:30', partySize:'4', firstName:'Ann', phone:'+447700900123' }),
+    body:new URLSearchParams({ date:'2026-08-06', time:'12:30', partySize:'4', name:'Ann', phone:'+447700900123' }),
   }), env, ctx);
   is('is refused', res.status, 403);
   is('and books nothing', posted, null);

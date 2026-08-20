@@ -13,6 +13,7 @@ const { dayShell, dayBody } = await import(`${R}/src/views/day.js`);
 const { pageHead, pageTail } = await import(`${R}/src/views/layout.js`);
 const render = (shell, body) => pageHead(shell) + body + pageTail();
 const { RESERVATIONS, EXPERIENCES, LOCATIONS } = await import('./fixture.mjs');
+const newView = await import('../src/views/new.js');
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url) => ({ ok:true, status:200, text: async () => JSON.stringify(
@@ -26,6 +27,14 @@ const experiences = await repo.experiences();
 const byDate = groupIntoSittings(bookings, experiences, new Date('2026-08-05T12:00:00Z'));
 const pages = {
   '/': render(monthShell({ month:'2026-08', today:'2026-08-06' }), monthBody({ month:'2026-08', weeks:monthGrid('2026-08', byDate), summary:monthSummary(byDate), today:'2026-08-06' })),
+  '/new': (() => {
+    const { newShell, newBody } = newView;
+    return render(newShell({ date:'2026-08-06' }), newBody({
+      date:'2026-08-06', today:'2026-08-06',
+      experiences: [...experiences.values()].filter((e) => e.visible),
+      sittings: (byDate.get('2026-08-06') || []).filter((s) => s.bookings.length > 0),
+    }));
+  })(),
   '/day': render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings: byDate.get('2026-08-06'), weeks:monthGrid('2026-08', byDate), month:'2026-08', today:'2026-08-06' })),
 };
 
@@ -97,6 +106,57 @@ for (const [name, vp] of [['iPhone SE (375px)', {width:375,height:667}], ['iPhon
       clip && clip.top >= 0 && clip.bottom >= 0,
       clip ? `${clip.top.toFixed(1)}px above, ${clip.bottom.toFixed(1)}px below` : 'no title');
   }
+  await ctx.close();
+}
+
+// Taking a booking with a handset against your ear
+{
+  const ctx = await browser.newContext({ viewport:{width:393,height:852}, isMobile:true, hasTouch:true });
+  const page = await ctx.newPage();
+  await page.goto('http://localhost:8799/new', { waitUntil:'networkidle' });
+
+  const form = await page.evaluate(() => {
+    const bottom = (sel) => document.querySelector(sel).getBoundingClientRect().bottom + window.scrollY;
+    return {
+      forms: document.querySelectorAll('form').length,
+      nested: !!document.querySelector('form form'),
+      pickers: document.querySelectorAll('.book input[type=date], .book input[type=time]:not(.reveals input)').length,
+      visiblePickers: [...document.querySelectorAll('input[type=date], input[type=time]')]
+        .filter((el) => el.offsetParent !== null).length,
+      chips: document.querySelectorAll('.chip').length,
+      timeHidden: getComputedStyle(document.querySelector('#time').closest('.reveals')).display === 'none',
+      phoneEnds: bottom('#phone'),
+      viewport: window.innerHeight,
+      seatsShown: document.querySelectorAll('.chipleft').length,
+    };
+  });
+
+  // A form inside a form is invalid, and the parser resolves it by closing the
+  // outer one — which silently puts most of the booking outside the form.
+  check('no form is nested inside another', !form.nested);
+  check('the date picker is its own form', form.forms >= 2, `${form.forms} forms`);
+
+  // The whole point: nothing on the common path opens a modal wheel.
+  check('no picker is on screen until asked for', form.visiblePickers === 0, `${form.visiblePickers} showing`);
+  check('the time field stays shut until "another time"', form.timeHidden);
+  check('when, sitting and party are taps', form.chips >= 12, `${form.chips} chips`);
+  check('each sitting says how much room is left', form.seatsShown >= 1, `${form.seatsShown}`);
+
+  // Everything that has to be read back to the caller, without scrolling.
+  check('the booking down to the phone number fits one screen',
+    form.phoneEnds <= form.viewport, `${Math.round(form.phoneEnds)}px in ${form.viewport}px`);
+
+  const small = await page.evaluate(() => [...document.querySelectorAll('.chip')]
+    .filter((el) => el.getBoundingClientRect().height < 44).length);
+  check('every chip is a real tap target', small === 0, `${small} too small`);
+
+  // Choosing "another time" is what reveals the time field — no second tap on
+  // a disclosure to say what the chip already said.
+  await page.click('.chip:has(input[value="other"])');
+  const revealed = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('#time').closest('.reveals')).display !== 'none');
+  check('choosing "another time" reveals the time field', revealed);
+
   await ctx.close();
 }
 

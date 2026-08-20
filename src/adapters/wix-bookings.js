@@ -6,7 +6,7 @@
  */
 
 import { WixClient } from '../wix.js';
-import { STATUS, PAYMENT } from '../domain.js';
+import { STATUS, PAYMENT, isDead } from '../domain.js';
 
 const RESERVATIONS_QUERY = '/table-reservations/reservations/v1/reservations/query';
 const RESERVATION = '/table-reservations/reservations/v1/reservations';
@@ -127,6 +127,27 @@ export class WixBookings {
    * them. Status is left unset so Wix decides between RESERVED and REQUESTED
    * by the location's own approval setting rather than us asserting one.
    */
+  /**
+   * Has this exact booking just been written?
+   *
+   * A create is not idempotent and Wix takes a moment to answer, so a second
+   * tap — or a back button, or two people taking the same call — writes a
+   * second booking that nobody notices until somebody reads the diary. Same
+   * phone, same minute, same sitting is not a coincidence.
+   */
+  async alreadyThere(draft) {
+    const start = draft.startsAt;
+    const existing = await this.inRange({
+      start: new Date(start.getTime() - 60_000),
+      end: new Date(start.getTime() + 60_000),
+    });
+    const digits = (value) => String(value || '').replace(/\D/g, '').slice(-9);
+
+    return existing.find((booking) => booking.startsAt.getTime() === start.getTime()
+      && digits(booking.phone) === digits(draft.phone)
+      && !isDead(booking)) || null;
+  }
+
   async create(draft) {
     const [locationId, experiences] = await Promise.all([this.locationId(), this.experiences()]);
     // experiences() is a Map keyed by id, not a list.
