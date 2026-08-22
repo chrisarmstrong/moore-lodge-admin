@@ -45,6 +45,29 @@ resellable within hours if somebody is waiting, and **amendments**, because
 Offer the move before the refund. It is the reason amendments have come up the
 list.
 
+**Entitlement vouchers honour the experience.** 'Afternoon Tea for Two' buys two
+teas whenever it is redeemed, and we absorb a price rise. `voucher` keeps both
+the balance and the offering it was sold against, so the generous reading is a
+policy applied at redemption rather than something baked in — and the money is
+still there to report as a liability.
+
+**Full prepayment now, deposits later.** The ledger already supports a deposit;
+nothing is being built for one. When private events want it, it is a second
+`payment` row against the same booking and a balance to chase, not a change of
+shape.
+
+**Two horizons, not one.** Teas are set about a month ahead, but Christmas and
+one-off events want to be sellable much further out. So the generator runs a
+rolling window for the recurring schedule and leaves dated one-offs alone — and
+the schema already allows it, because `sitting.rule_id` is nullable. A Christmas
+sitting in September is a row with no rule behind it, priced and capped on its
+own, and the rolling generator will not touch it.
+
+Worth saying plainly, though it is a trading decision rather than an
+architectural one: a month is short. People book Christmas in September and
+anniversaries further out than that, and every one of those is a booking the
+current window turns away. The system will not care which you choose.
+
 **One kitchen.** So a sitting's capacity is complete on the sitting itself and
 there is no pool table to build — one fewer table at cutover. The constraint is
 the pass rather than the room, and if tea ever runs in two rooms at once a pool
@@ -224,11 +247,16 @@ not obvious and all three bite.
 - **A refund after a chargeback is a double refund.** Store the dispute, block
   the manual path, and make Samson say why.
 
-## Vouchers — the part that cannot be deferred
+## Vouchers — later than they look, and still the last gate
 
 Vouchers read like a nice-to-have. They are the opposite: they decide *when* Wix
 can be switched off. Every voucher Wix has sold is an outstanding promise, and
 we cannot turn off the system holding those balances until ours honours them.
+
+What the per-path redirect buys is the right to do them second rather than not
+at all. Tea can come home while `/gift-card` still points at Wix, so vouchers
+stop blocking the first switch — but nothing closes the Wix account until they
+are done.
 
 **A voucher is a payment method, not a discount.** As a payment method it drops
 into the ledger — a £50 redemption against a £90 booking, card takes £40, the
@@ -447,34 +475,78 @@ Those links die at cutover for anyone holding an old one. One email to everybody
 with a future booking, on the day, is the difference between a smooth switch and
 a fortnight of confused phone calls.
 
-## The bare minimum
+## Three switches, not one
 
-Smallest set that lets Wix go dark, and what deliberately waits.
+The launch and the migration are separable, and the redirect that makes the
+launch possible splits the migration in half as well.
 
-| | Capability | Why here |
-|---|---|---|
-| **Cutover** | Experiences, offerings, schedule rules, sitting generation | Nothing sells without a calendar |
-| **Cutover** | Public checkout for Afternoon Tea, full prepayment | The one journey Wix owns |
-| **Cutover** | Holds, the oversell guard, the sweeper | Correctness. Not retrofittable under load |
-| **Cutover** | Ledger, refunds, policy snapshot | We are the merchant from day one |
-| **Cutover** | Voucher sale, redemption, Wix balance import | Wix cannot go dark holding live balances |
-| **Cutover** | Confirmation, reminder, cancellation, staff notice | A booking nobody is told about is not a booking |
-| **Cutover** | Guest self-service link | Replaces a capability guests already have |
-| **Cutover** | Phone bookings and staff actions on the new store | The forms exist; they need the adapter |
-| **Cutover** | Audit log, importer, redirects | The switch itself |
-| **Cutover** | Amendments — date, party size, offering swap | Flexible terms make the move the first answer, not the refund |
-| Fast follow | Waitlist | Pure upside; nothing depends on it |
-| Fast follow | Per-guest dietary detail | Booking-level notes hold the line briefly |
-| Fast follow | Add-ons and upsells | The lines model is there; merchandising is not urgent |
-| Fast follow | Service sheets, reconciliation, deferred-revenue report | Wanted by the second month end |
-| Later | Packages, seasons, promo codes | Line generators over a model that supports them |
-| Later | Deposits, saved cards, no-show charging | Private events, not teas |
-| Later | Tables and seating plans | Covers-only is enough while one room seats one sitting |
-| Later | Texts, Elements checkout, a second venue | All cheap if the model stays honest |
+`/experience-details` and `/gift-card` are two independent paths. Each can come
+home on its own day. That takes vouchers off the critical path for the tea
+cutover, which was the single thing making the first switch large.
 
-The surprise in the top block is vouchers. They are there because they are the
-only capability where Wix holds something of ours — money we already owe people
-— that cannot be left behind.
+### Switch one — the website goes live
+
+Wix moves to `book.moorelodge.co.uk`, the site Worker redirects both paths to
+it, the new site takes the apex. **Nothing about the booking system has to be
+finished.** Wix keeps selling teas and vouchers exactly as it does today, behind
+links that still work — including the ones Google has indexed and the ones in
+every confirmation email Wix has already sent.
+
+This is a DNS change and a deploy. The only ordering rule is that the subdomain
+must resolve and take a real booking before the Worker ships, because deploying
+first takes the tea offline.
+
+### Switch two — tea comes home
+
+`/experience-details` stops redirecting and starts serving our own checkout.
+Wix stays alive on the subdomain, unlinked except for gift cards.
+
+| Capability | Why it is here |
+|---|---|
+| Experiences, offerings, schedule rules, sitting generation | Nothing sells without a calendar |
+| Public checkout, full prepayment through Stripe | The journey Wix owns today |
+| Holds, the oversell guard, the sweeper | Correctness. Not retrofittable under load |
+| Ledger, refunds, policy snapshot | We are the merchant from this day |
+| Confirmation, reminder, cancellation, staff notice | A booking nobody is told about is not a booking |
+| Guest self-service link | Replaces a capability guests already have |
+| Amendments — date, party, offering | Flexible terms make the move the first answer |
+| Phone bookings and staff actions on the new store | The forms exist; they need the adapter |
+| Audit log, importer for bookings dated on or after D | The switch itself |
+
+### Switch three — vouchers come home, and Wix goes dark
+
+`/gift-card` stops redirecting. Every outstanding Wix balance is imported and
+every old code keeps working indefinitely — they are printed on cards in
+people's kitchen drawers. Only after this can the Wix account actually be
+closed, which is why vouchers were never optional, only later than they looked.
+
+| Capability | Why it is here |
+|---|---|
+| Voucher sale, redemption, delivery on a date | The last thing Wix does |
+| Wix balance and code import | Money we already owe people |
+| Redirects retired, Wix subscription cancelled | The end of it |
+
+### After that
+
+Waitlist, per-guest dietary detail, add-ons and upsells, service sheets,
+reconciliation and the deferred-revenue report. Then packages, seasons, promo
+codes, deposits, tables, texts. All cheap if the model stays honest.
+
+## On doing it this weekend
+
+The website can go live this weekend. Switch one is a subdomain and a deploy,
+and the Worker change for it is already written.
+
+Switch two is not a weekend, and it would be a disservice to pretend otherwise.
+It is a Stripe integration, a public checkout, an outbox with real
+deliverability behind it, an importer run against live data, and amendments —
+each of which handles somebody's money on a date they have already told their
+family about. The failure modes are all quiet ones: a confirmation that never
+arrives, a seat sold twice, a refund taken twice.
+
+The good news is that switch one removes every reason to rush switch two. The
+new site is out, Wix is invisible behind a subdomain, and the migration can be
+done at the pace correctness actually needs.
 
 ## Cheap now, expensive later
 
@@ -497,25 +569,24 @@ only capability where Wix holds something of ours — money we already owe peopl
 10. **Every externally-triggered write carries an idempotency key.** Stripe
     retries, cron overlaps, guests double-tap.
 
-## Open questions
+## Settled, and what is left
 
-Four remain, and none of them block the schema.
+All eight are answered. VAT registered and inclusive; cancellation flexible; one
+kitchen; covers not tables; entitlement vouchers honoured generously; full
+prepayment with deposits left for later; two horizons, a rolling month for teas
+and dated one-offs as far out as we like; and the website going live this
+weekend with the migration following behind it.
 
-1. **Entitlement vouchers at a raised price — honour the experience, or the
-   money?** More urgent than it was, because if these are single-purpose for VAT
-   then the tax is settled at sale and the entitlement is a promise made against
-   money already accounted for. Recommendation stands: honour the experience.
-2. **Full prepayment, or a deposit?** Full is assumed, and is what Wix appears
-   to do. Flexible cancellation makes it a slightly bolder position than it
-   sounds — a deposit limits the exposure, at the cost of a balance to chase.
-3. **How far ahead do we sell?** Sets the generation horizon and how much of
-   Christmas has to exist by cutover. A configuration value, not a schema one.
-4. **Is there a target date for switching Wix off?** The sequencing is drawn to
-   be cuttable; the date says where to cut.
+Two remain for the accountant rather than for us, and neither blocks a line of
+code:
 
-And two for the accountant rather than for us: whether our vouchers are
-single-purpose for VAT, and whether an undated voucher carries the fourteen-day
-distance-selling cancellation right that a dated sitting does not.
+- Whether our vouchers are single-purpose for VAT, which decides whether the tax
+  falls at sale or at redemption.
+- Whether an undated voucher carries the fourteen-day distance-selling
+  cancellation right that a dated sitting does not.
+
+Both want answering before the first voucher is sold through our own checkout,
+which switch three is the deadline for.
 
 ## The schema
 
@@ -547,8 +618,14 @@ real data.
 
 ## Next
 
-The importer, pointed at a scratch database off live Wix data. That is what
-tests whether the model holds — a year of real bookings, real names and real
-dietary chaos going into these tables and coming back out as `Booking`s the
-existing views can render, with nothing in `src/views/` changed. If that works,
-the seam has done its job and the rest is building the checkout.
+Two things, in this order.
+
+**Get the website out.** Connect `book.moorelodge.co.uk` in Wix, take a real
+booking through it to prove the checkout survives the move, then deploy the site
+Worker. The redirect is written and tested; nothing else stands in the way.
+
+**Then the importer**, pointed at a scratch database off live Wix data. That is
+what tests whether the model holds — a year of real bookings, real names and
+real dietary chaos going into these tables and coming back out as `Booking`s the
+existing views render with nothing in `src/views/` changed. If that works, the
+seam has done its job and the rest is building the checkout.
