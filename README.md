@@ -126,11 +126,15 @@ tests pin "today" so the clamp on past nights is exercised rather than dodged.
 `node tools/card.mjs` redraws the link preview card. It needs the same browser
 `test:mobile` does.
 
-`npm run test:mobile` drives a real browser at phone viewports: no horizontal
-scroll, every tap target at least 44px, the install metadata, and the service
-worker actually caching, serving offline, and — the one that matters — throwing
-the cached diary away when Access stops recognising the session. It needs
-`npm install`; set `CHROMIUM` to a browser binary to skip Playwright's download.
+`npm run test:mobile` drives a real browser at phone and tablet viewports: no
+horizontal scroll, every tap target at least 44px, the install metadata, and the
+service worker actually caching, serving offline, and — the one that matters —
+throwing the cached diary away when Access stops recognising the session,
+whether that arrives as a page reload or as a tap the page handled itself.
+`test/touch.test.mjs` holds the stubbed Wix open on purpose, so everything it
+asserts about a tap is measured in the window where a real Samson would still be
+waiting. It needs `npm install`; set `CHROMIUM` to a browser binary to skip
+Playwright's download.
 
 ## On a phone
 
@@ -157,6 +161,76 @@ skeleton. Waiting for Wix before sending a byte left the previous screen frozen
 with nothing to show for it. The consequence is that the status line is gone by
 the time the body is built, so a failure after the flush is reported inside the
 page rather than as a 502.
+
+The skeleton's pieces are direct children of `main`, not one wrapper. On a
+landscape tablet `main` *is* the grid, and only a direct child can be placed in
+it — a wrapper put the whole skeleton in the first column and the page jumped
+from one column to two the moment Wix answered. That is also why the stylesheet
+that retires it uses `!important`: `main.split > .planner` outweighs a bare
+class, and a retired skeleton standing beside the real thing is worse.
+
+**A tap is answered before the network is.** Two things were wrong on a tablet
+and they compounded. The tap highlight is off across the whole app, and the
+`:active` rules that were meant to replace it are withheld by iOS until it has
+ruled out a scroll — so a control did nothing at all for the first fraction of a
+second. And a navigation then held the page somebody had just left on screen for
+the whole round trip to Cloudflare and on to Wix. Nothing moved, twice over.
+
+So the press is a class set on `pointerdown` rather than a pseudo-class, and
+every control dips under the finger and springs back: quick going in, slower and
+slightly past itself coming out. It is held for a minimum of 90ms so the
+quickest tap still shows it, and let go of the instant a `pointercancel` or a
+scroll says the touch was the start of a drag. The `:active` rules stay, for a
+mouse and for the moment before the script runs.
+
+**And the view switches on the tap.** A tap on a link is handled in the page:
+the shape of the destination goes up immediately out of what the URL alone says,
+and the server's two flushes land into it as they arrive — exactly as on a fresh
+load. The request itself starts on `pointerdown`, a beat before the finger
+lifts. Three things make this safe rather than a small framework:
+
+- The client knows only what shape a path is — a month grid or a day — and
+  nothing else about the page. Every byte on screen was rendered by the server.
+- The fetch carries `x-samson-nav`, which is how `sw.js` knows to treat it as
+  the navigation it is. Without that the diary would stop being cached for
+  offline the moment the page stopped reloading itself, and — far worse — an
+  expired Access session would stop purging it.
+- It asks for `redirect: "manual"`, so an Access bounce comes back as an opaque
+  redirect and is handed straight to the browser. Following it in the page would
+  fail CORS at best. `test/access-cache.test.mjs` covers the tap as well as the
+  reload, because that is the promise about guest data.
+
+A build stamp that has moved, an answer that is not HTML, and the redirects at
+`/` and `/today` all fall back to letting the browser do it.
+
+**A link that goes somewhere nameable says so.** A title bar is built from the
+URL and nothing else, so the server already knows the destination's — and
+`ahead()` in `src/views/layout.js` puts it on the link. The date arrows and the
+planner's days carry it, which are the two ways a date is changed, and a tap on
+one paints the new date before a byte has been asked for. Only the diary waits.
+
+The arrows carry two more: the destination's *own* prev and next, named rather
+than worked out on the other side, so the bar that goes up on the tap is a
+working one and a thumb held on "next" walks the dates. Those drawn arrows carry
+no name for where they lead — except the one leading back, which the page can
+always name for itself, so correcting a mis-tap is as immediate as making it.
+Everything else steps and shimmers rather than steps and lies, until the shell
+lands a moment later with the server's own fully-named arrows.
+
+**Anything sticky has to know how tall the header is.** `--bar` is that height —
+a tap target, the bar's padding, its rule, and the notch — and the sitting
+headings, the offline banner and the planner all clear it. It used to be guessed
+at `3.2rem` in one place and ignored in the others, which is 25px short: on a
+landscape tablet the day began hard against the header, and the planner slid a
+good 60px underneath it on the way down the page. The title bar's own top
+padding is dropped in the split layout, because there the detail column starts
+on the same line and would not get it, so the space belongs to `main`.
+
+**The arrows get a bigger target off a phone.** They stay bare glyphs — a white
+box round a chevron is a web form's idea of navigation — but at 48px they were
+a small thing to aim at across a kitchen, and missing one was indistinguishable
+from tapping one that did nothing. 56px from `640px` up, and a full circle of
+wash under the finger.
 
 **The rooms come from the month, whichever page asked.** A day page fetches the
 whole month from freetobook even though it shows one night of it, because the

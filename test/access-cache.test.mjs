@@ -33,7 +33,8 @@ let sessionExpired = false;
 const TYPES = { '.woff2':'font/woff2', '.png':'image/png', '.js':'text/javascript', '.webmanifest':'application/manifest+json', '.html':'text/html' };
 const app = createServer((req,res)=>{
   const p = req.url.split('?')[0];
-  if (p === '/day') {
+  // Any day, so there is a real diary page to tap through to.
+  if (p === '/day' || p.startsWith('/day/')) {
     if (sessionExpired) { res.writeHead(302,{location:'http://localhost:8797/login'}); return res.end(); }
     res.writeHead(200,{'content-type':'text/html; charset=utf-8'}); return res.end(dayHtml);
   }
@@ -97,6 +98,39 @@ const shellSurvives = await page.evaluate(async () => {
   return n ? (await (await caches.open(n)).keys()).length : 0;
 });
 check('fonts and icons kept — no data in them', shellSurvives > 0, `${shellSurvives} entries`);
+
+// The same promise, for the tap that never becomes a browser navigation.
+//
+// A page that swaps its own content fetches the next day itself, and that
+// fetch is where an expired session now shows up. If it were followed quietly
+// the worker would keep serving a diary full of guest details to somebody
+// Access has stopped recognising — so it must bounce to login exactly as a
+// whole-page load does, and take the cache with it.
+sessionExpired = false;
+await page.goto('http://localhost:8796/day', { waitUntil:'networkidle' });
+await page.waitForTimeout(600);
+const warm = await page.evaluate(async () => {
+  const n = (await caches.keys()).find(k => k.includes('diary'));
+  return n ? (await (await caches.open(n)).keys()).map(r => new URL(r.url).pathname) : [];
+});
+check('signed in again, the diary is back in the cache', warm.includes('/day'), warm.join(',') || 'empty');
+
+sessionExpired = true;
+await page.locator('.titlebar .arrow[rel=next]').click({ noWaitAfter: true });
+await page.waitForURL(/8797/, { timeout: 8000 }).catch(() => {});
+check('a tap on an expired session lands on login, not on a blank page',
+  page.url().includes('8797'), page.url());
+
+await page.goto('http://localhost:8796/offline.html', { waitUntil:'domcontentloaded' });
+await page.waitForTimeout(400);
+const swept = await page.evaluate(async () => {
+  const n = (await caches.keys()).find(k => k.includes('diary'));
+  return n ? (await (await caches.open(n)).keys()).map(r => new URL(r.url).pathname) : [];
+});
+// As above, /offline.html gets cached again by the navigation that brought us
+// back to this origin. It is the days that must not have survived.
+check('and the guest details went with it', !swept.some((path) => path.startsWith('/day')),
+  swept.join(',') || 'nothing left');
 
 await browser.close(); app.close(); login.close();
 console.log(fail ? `\n${fail} FAILED` : '\nall checks passed');

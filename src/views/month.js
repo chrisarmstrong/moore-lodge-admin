@@ -1,4 +1,4 @@
-import { escape, BED } from './layout.js';
+import { escape, ahead, BED } from './layout.js';
 import { monthLabel, shiftMonth, localMonth, WEEKDAY_INITIALS } from '../time.js';
 
 /** The part of the month page that needs no data — flushed while Wix answers. */
@@ -6,13 +6,20 @@ export function monthShell({ month, today }) {
   const previous = shiftMonth(month, -1);
   const next = shiftMonth(month, 1);
   const thisMonth = localMonth();
+  // The month either side of the one an arrow leads to: it is that page's own
+  // pair of arrows, so a tap can put a working title bar up straight away
+  // rather than leaving the header dead until Cloudflare answers.
+  const before = shiftMonth(month, -2);
+  const after = shiftMonth(month, 2);
 
   const titlebar = `<div class="titlebar">
-    <a class="arrow" href="/calendar/${previous}" rel="prev" aria-label="${escape(monthLabel(previous))}">&lsaquo;</a>
+    <a class="arrow" href="/calendar/${previous}" rel="prev" aria-label="${escape(monthLabel(previous))}"
+      ${ahead({ title: monthLabel(previous), prev: `/calendar/${before}`, next: `/calendar/${month}` })}>&lsaquo;</a>
     <div class="title">
       <h1>${escape(monthLabel(month))}</h1>
     </div>
-    <a class="arrow" href="/calendar/${next}" rel="next" aria-label="${escape(monthLabel(next))}">&rsaquo;</a>
+    <a class="arrow" href="/calendar/${next}" rel="next" aria-label="${escape(monthLabel(next))}"
+      ${ahead({ title: monthLabel(next), prev: `/calendar/${month}`, next: `/calendar/${after}` })}>&rsaquo;</a>
   </div>`;
 
   const nav = `<nav class="subnav">
