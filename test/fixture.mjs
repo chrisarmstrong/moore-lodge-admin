@@ -52,3 +52,51 @@ export const EXPERIENCES = [{ id:TEA, archived:false, configuration:{
 export const LOCATIONS = [{ id:'19e73162', configuration:{ reservationForm:{
   customFieldDefinitions:[{ id:ALLERGY, name:'Please confirm any allergies.' }] } } }];
 
+
+/**
+ * A month upstairs, for the render harness and the mobile tests. Hand-built
+ * rather than fetched: `render.mjs` must draw the same page every time, and a
+ * live diary would make the screenshots move under the tests.
+ *
+ * It carries the shapes that are awkward to draw — a stay in progress, a
+ * changeover morning, the whole house going out as one, and a night taken off
+ * sale entirely.
+ */
+export function ROOM_NIGHTS(month) {
+  const rooms = [
+    { id: 266620, name: 'Cherry Cottage', group: 'cottages' },
+    { id: 265847, name: 'River Room', group: 'rooms' },
+    { id: 265844, name: "Samson's Suite", group: 'rooms' },
+    { id: 265842, name: 'Garden Room', group: 'rooms' },
+    { id: 265840, name: 'Bann Suite w/ Rolltop bath', group: 'rooms' },
+    { id: 265846, name: 'Carson Room', group: 'rooms' },
+  ];
+  // date → unit id → state. Anything unnamed is free.
+  const script = {
+    '06': { 266620: 'staying', 265847: 'arriving', 265844: 'staying' },
+    '07': { 266620: 'staying', 265847: 'staying', 265844: 'departed', 265840: 'maintenance' },
+    '08': { 266620: 'departed', 265847: 'staying' },
+    '12': { 265842: 'arriving', 265846: 'arriving' },
+    '13': { 265842: 'departed', 265846: 'departed', 266620: 'arriving' },
+    '20': { 265847: 'arriving', 265844: 'arriving', 265842: 'arriving', 265840: 'arriving', 265846: 'arriving' },
+    '21': { 265847: 'staying', 265844: 'staying', 265842: 'staying', 265840: 'staying', 265846: 'staying' },
+    '27': Object.fromEntries(rooms.map((r) => [r.id, 'closed'])),
+  };
+
+  const days = new Map();
+  for (const [day, states] of Object.entries(script)) {
+    const dated = rooms.map((room) => ({ ...room, state: states[room.id] || 'free' }));
+    days.set(`${month}-${day}`, {
+      date: `${month}-${day}`,
+      rooms: dated,
+      lettable: rooms.length,
+      occupied: dated.filter((r) => r.state === 'arriving' || r.state === 'staying').length,
+      arrivals: dated.filter((r) => r.state === 'arriving').length,
+      departures: dated.filter((r) => r.state === 'departed').length,
+      // The 20th and 21st are the house taken as one.
+      wholeHouse: day === '20' || day === '21',
+      priorKnown: true,
+    });
+  }
+  return days;
+}

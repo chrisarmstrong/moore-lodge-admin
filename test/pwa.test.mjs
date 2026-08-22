@@ -7,12 +7,12 @@ const LAUNCH = process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } :
 
 const R = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const { WixBookings } = await import(`${R}/src/adapters/wix-bookings.js`);
-const { groupIntoSittings, monthGrid, monthSummary } = await import(`${R}/src/calendar.js`);
+const { groupIntoSittings, monthGrid, monthSummary, roomsSummary } = await import(`${R}/src/calendar.js`);
 const { monthShell, monthBody } = await import(`${R}/src/views/month.js`);
 const { dayShell, dayBody } = await import(`${R}/src/views/day.js`);
 const { pageHead, pageTail } = await import(`${R}/src/views/layout.js`);
 const render = (shell, body) => pageHead(shell) + body + pageTail();
-const { RESERVATIONS, EXPERIENCES, LOCATIONS } = await import('./fixture.mjs');
+const { RESERVATIONS, EXPERIENCES, LOCATIONS, ROOM_NIGHTS } = await import('./fixture.mjs');
 const newView = await import('../src/views/new.js');
 
 const realFetch = globalThis.fetch;
@@ -25,8 +25,11 @@ const repo = new WixBookings({ WIX_API_KEY:'k', WIX_SITE_ID:'s' });
 const bookings = await repo.inRange({ start:new Date('2026-07-31T23:00:00Z'), end:new Date('2026-08-31T23:00:00Z') });
 const experiences = await repo.experiences();
 const byDate = groupIntoSittings(bookings, experiences, new Date('2026-08-05T12:00:00Z'));
+// With rooms, so the bed badges are on the page these checks measure. Without
+// them the cells carry no badge and every check below passes vacuously.
+const roomsByDate = ROOM_NIGHTS('2026-08');
 const pages = {
-  '/': render(monthShell({ month:'2026-08', today:'2026-08-06' }), monthBody({ month:'2026-08', weeks:monthGrid('2026-08', byDate), summary:monthSummary(byDate), today:'2026-08-06' })),
+  '/': render(monthShell({ month:'2026-08', today:'2026-08-06' }), monthBody({ month:'2026-08', weeks:monthGrid('2026-08', byDate, roomsByDate), summary:monthSummary(byDate), rooms:roomsSummary(roomsByDate), today:'2026-08-06' })),
   '/new': (() => {
     const { newShell, newBody } = newView;
     const visible = [...experiences.values()].filter((e) => e.visible);
@@ -41,7 +44,7 @@ const pages = {
       sittings: byDate.get('2026-08-06') || [],
     }));
   })(),
-  '/day': render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings: byDate.get('2026-08-06'), weeks:monthGrid('2026-08', byDate), month:'2026-08', today:'2026-08-06' })),
+  '/day': render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings: byDate.get('2026-08-06'), rooms: roomsByDate.get('2026-08-06'), weeks:monthGrid('2026-08', byDate, roomsByDate), month:'2026-08', today:'2026-08-06' })),
 };
 
 const TYPES = { '.woff2':'font/woff2', '.png':'image/png', '.js':'text/javascript',
@@ -95,6 +98,40 @@ for (const [name, vp] of [['iPhone SE (375px)', {width:375,height:667}], ['iPhon
       return out;
     }, 44);
     check(`${name} ${path} — every tap target >= 44px tall`, small.length === 0, small.slice(0,4).join(' '));
+
+    // Tall enough is not the same as reachable. Every month cell is covered by
+    // an invisible anchor, and anything painted over it eats the tap and does
+    // nothing with it — which a height check cannot see. The bed badge did
+    // exactly that, dead centre of the cell on a phone, on precisely the nights
+    // somebody wants to open.
+    //
+    // Aimed at the things sitting in the cells rather than at guessed fractions
+    // of them: a sampled point that happens to miss the badge passes whether
+    // the badge blocks or not, which is a test that only looks like one.
+    const blocked = await page.evaluate(() => {
+      const out = [];
+      for (const cell of document.querySelectorAll('.cell:not(.outside)')) {
+        // elementFromPoint reads viewport coordinates and answers null for
+        // anything below the fold, so the cell has to be brought on screen
+        // before it is asked about — otherwise most of the month goes untested
+        // and the few that are tested look like failures.
+        cell.scrollIntoView({ block: 'center' });
+        if (cell.getBoundingClientRect().width === 0) continue;
+        const day = cell.querySelector('.n')?.textContent;
+        const targets = [cell, ...cell.querySelectorAll('.beds, .compact, .covers, .pill')];
+        for (const target of targets) {
+          const box = target.getBoundingClientRect();
+          if (box.width === 0 || box.height === 0) continue;
+          const at = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          if (!at?.closest('a.open')) {
+            out.push(`${day}/${target.className || 'cell'}:${at?.className || at?.tagName}`);
+          }
+        }
+      }
+      return out;
+    });
+    check(`${name} ${path} — nothing sits on top of a day and eats the tap`,
+      blocked.length === 0, blocked.slice(0, 4).join(' '));
 
     // The title ellipsises, which means overflow:hidden, which clips at the
     // padding box — and that box sat above the foot of a "g". Comparing the
