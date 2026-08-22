@@ -1,4 +1,4 @@
-import { escape, BED } from './layout.js';
+import { escape, ahead, BED } from './layout.js';
 import { dateLabel, shiftDate, localDate, localMonth, WEEKDAY_INITIALS } from '../time.js';
 import {
   statusLabel, paymentLabel, roomStateLabel, needsAttention,
@@ -12,14 +12,27 @@ export function dayShell({ date }) {
   const next = shiftDate(date, 1);
   const today = localDate();
   const month = localMonth(new Date(`${date}T12:00:00Z`));
+  // The day beyond each arrow, which is that page's own far arrow — the near
+  // one is this page. Between them a tap paints a working title bar at once,
+  // so a thumb held on "next" walks the dates instead of waiting on each one.
+  const before = shiftDate(date, -2);
+  const after = shiftDate(date, 2);
 
   const titlebar = `<div class="titlebar">
-    <a class="arrow" href="/day/${previous}" rel="prev" aria-label="Previous day">&lsaquo;</a>
+    <a class="arrow" href="/day/${previous}" rel="prev" aria-label="Previous day"
+      ${ahead({
+    title: shortDate(previous), sub: previous === today ? 'Today' : weekday(previous),
+    prev: `/day/${before}`, next: `/day/${date}`,
+  })}>&lsaquo;</a>
     <div class="title">
       <h1>${escape(shortDate(date))}</h1>
       <p class="sub">${date === today ? 'Today' : escape(weekday(date))}</p>
     </div>
-    <a class="arrow" href="/day/${next}" rel="next" aria-label="Next day">&rsaquo;</a>
+    <a class="arrow" href="/day/${next}" rel="next" aria-label="Next day"
+      ${ahead({
+    title: shortDate(next), sub: next === today ? 'Today' : weekday(next),
+    prev: `/day/${date}`, next: `/day/${after}`,
+  })}>&rsaquo;</a>
   </div>`;
 
   // Actions live here rather than as inline text in the subtitle: a link inside
@@ -65,7 +78,13 @@ function plannerColumn({ weeks, month, date, today }) {
     const load = cell.covers > 0 ? `<span class="pcovers">${cell.covers}</span>` : '';
     const label = `${dateLabel(cell.date)}${cell.covers ? `, ${cell.covers} guests` : ', nothing booked'}`;
 
+    // Named, like the arrows: on a landscape tablet this grid is how a date is
+    // usually changed, and a shimmering title beside a live one reads as a
+    // fault. Its arrows are left to the shell — a cell is not a step along a
+    // line, and naming both ends of every one of them is 35 days of attributes
+    // for the tenth of a second before the real bar lands.
     return `<a class="${classes.join(' ')}" href="/day/${cell.date}" aria-label="${escape(label)}"
+      ${ahead({ title: shortDate(cell.date), sub: cell.date === today ? 'Today' : weekday(cell.date) })}
       ${cell.date === date ? 'aria-current="page"' : ''}><span class="pn">${cell.day}</span>${load}</a>`;
   }).join('');
 

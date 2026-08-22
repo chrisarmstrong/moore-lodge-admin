@@ -160,15 +160,37 @@ export function skeleton(kind) {
 }
 
 /**
+ * What a link can say about where it goes.
+ *
+ * A title bar is built from the URL and nothing else, so the server already
+ * knows the destination's — and saying it on the link is what lets a tap put
+ * the new date on screen before a byte has been asked for. Stepping through
+ * days is the case that needs it: the arrows are tapped over and over, and
+ * waiting on the shell each time is what made them feel like nothing happened.
+ *
+ * `prev` and `next` are the destination's own arrows, named rather than worked
+ * out on the other side, so the bar that goes up on the tap is a working one.
+ * Left off, it goes up with the arrows waiting on the shell, which is right for
+ * a link that is not a step along a line.
+ */
+export function ahead({ title, sub = null, prev = null, next = null }) {
+  return ` data-title="${escape(title)}"`
+    + (sub ? ` data-sub="${escape(sub)}"` : '')
+    + (prev ? ` data-prev="${escape(prev)}"` : '')
+    + (next ? ` data-next="${escape(next)}"` : '');
+}
+
+/**
  * Everything a client-side navigation can put on screen before the network has
- * said a word: the shape of the page that was asked for, with the title and the
- * arrows still to come. The server's first flush replaces it a moment later.
+ * said a word: the shape of the page that was asked for, and — where the link
+ * that was tapped said so — its title and arrows too. Anything the link did not
+ * name waits for the server's first flush a moment later.
  */
 export function navSkeleton(kind) {
-  return `<div class="titlebar sk sk-bar" aria-hidden="true">
-      <span class="arrow"></span>
+  return `<div class="titlebar sk-bar" aria-hidden="true">
+      <a class="arrow" data-side="prev"></a>
       <div class="title"><span class="sk-line"></span></div>
-      <span class="arrow"></span>
+      <a class="arrow" data-side="next"></a>
     </div>
     <nav class="subnav sk sk-nav" aria-hidden="true"><span class="sk-line"></span></nav>
     ${skeleton(kind)}`;
@@ -402,7 +424,68 @@ const SCRIPT = `
     // The redirects and the diagnostic answer with something that is not a
     // page. They stay the browser's business.
     if (url.pathname === '/' || url.pathname === '/today' || url.pathname === '/whoami') return null;
-    return url;
+    return link;
+  }
+
+  function hintOf(link) {
+    var said = link.dataset;
+    if (!said || !said.title) return null;
+    return { title: said.title, sub: said.sub, prev: said.prev, next: said.next };
+  }
+
+  /** What the page being left calls itself, for the arrow that comes back to it. */
+  function naming() {
+    var heading = document.querySelector('#main .titlebar h1');
+    if (!heading) return null;
+    var sub = document.querySelector('#main .titlebar .sub');
+    return {
+      at: location.pathname + location.search,
+      title: heading.textContent,
+      sub: sub ? sub.textContent : '',
+    };
+  }
+
+  /**
+   * The destination's own title bar, up on the tap. Text goes in as text — it
+   * came off an attribute, and the shell that follows is the only thing allowed
+   * to put markup on this page.
+   */
+  function dress(hint, back) {
+    var bar = document.querySelector('#main .sk-bar');
+    if (!bar || !hint) return;
+    bar.classList.remove('sk-bar');
+    bar.removeAttribute('aria-hidden');
+
+    var title = bar.querySelector('.title');
+    title.textContent = '';
+    var heading = document.createElement('h1');
+    heading.textContent = hint.title;
+    title.appendChild(heading);
+    if (hint.sub) {
+      var sub = document.createElement('p');
+      sub.className = 'sub';
+      sub.textContent = hint.sub;
+      title.appendChild(sub);
+    }
+
+    point(bar, 'prev', hint.prev, '‹', 'Back', back);
+    point(bar, 'next', hint.next, '›', 'Forward', back);
+  }
+
+  function point(bar, side, href, glyph, label, back) {
+    var arrow = bar.querySelector('.arrow[data-side=' + side + ']');
+    if (!arrow || !href) return;
+    arrow.setAttribute('href', href);
+    arrow.setAttribute('aria-label', label);
+    arrow.textContent = glyph;
+    // These arrows were drawn here rather than sent, so they carry no name for
+    // where they go and a tap on one waits for the shell like any other link.
+    // The exception is the way back: this page can name that, so it does, and
+    // correcting a mis-tap is as immediate as making it.
+    if (back && href === back.at) {
+      arrow.setAttribute('data-title', back.title);
+      if (back.sub) arrow.setAttribute('data-sub', back.sub);
+    }
   }
 
   function borrow(doc, selector, attribute) {
@@ -445,9 +528,10 @@ const SCRIPT = `
     return 'ok';
   }
 
-  function go(url, push) {
+  function go(url, push, hint) {
     var mine = ++trip;
     var shape = shapeOf(url.pathname);
+    var back = naming();
     showing = url.pathname + url.search;
     var give = function () { if (mine === trip) location.replace(url.href); };
 
@@ -459,6 +543,7 @@ const SCRIPT = `
     var main = document.getElementById('main');
     main.className = shape.cls;
     main.innerHTML = SHELLS[shape.kind];
+    dress(hint, back);
     main.setAttribute('aria-busy', 'true');
     scrollTo(0, 0);
 
@@ -514,15 +599,15 @@ const SCRIPT = `
     history.scrollRestoration = 'manual';
 
     addEventListener('pointerdown', function (event) {
-      var url = destination(event);
-      if (url) warmUp(url.href);
+      var link = destination(event);
+      if (link) warmUp(new URL(link.href, location.href).href);
     }, { passive: true, capture: true });
 
     addEventListener('click', function (event) {
-      var url = destination(event);
-      if (!url) return;
+      var link = destination(event);
+      if (!link) return;
       event.preventDefault();
-      go(url, true);
+      go(new URL(link.href, location.href), true, hintOf(link));
     });
 
     // Back into a page the browser loaded itself lands here too, already
@@ -530,7 +615,7 @@ const SCRIPT = `
     // trip to Wix for a page that is on screen.
     addEventListener('popstate', function () {
       if (location.pathname + location.search === showing) return;
-      go(new URL(location.href), false);
+      go(new URL(location.href), false, null);
     });
   }
 })();
@@ -554,6 +639,11 @@ const CSS = `
   --left:env(safe-area-inset-left,0px);
   --right:env(safe-area-inset-right,0px);
   --tap:48px;
+  /* The bar is sticky, so everything that sticks under it has to know how tall
+     it is: a tap target, its own padding, its rule, and whatever the notch
+     takes. Guessed once at 3.2rem, which left the sitting headings and the
+     planner sliding a good 60px underneath it. */
+  --bar:calc(var(--tap) + 1.7rem + 1px + var(--top));
 }
 @media (prefers-color-scheme:dark){
   :root{
@@ -607,6 +697,13 @@ a,button,summary,label,input,select,textarea{touch-action:manipulation}
   transition:transform .24s cubic-bezier(.16,.84,.28,1.28),background-color .18s ease;
 }
 .pressed{transform:scale(var(--press-scale,.96));transition-duration:.055s}
+/* :active already washes these; .pressed has to as well, or the answer to a
+   finger is a dip with no colour behind it. Ordered before .chip.on so a
+   chosen chip keeps its fill. */
+.wordmark.pressed,.add.pressed,.titlebar .arrow.pressed,.subnav a.pressed,.nav a.pressed,
+.cue.pressed,.act.pressed,.chip.pressed,.pall.pressed,.giveup.pressed,
+.reveal>summary.pressed,.more>summary.pressed,.ask>summary.pressed,
+.booking .contacts a.pressed{background:var(--press)}
 .titlebar .arrow{--press-scale:.86}
 .wordmark{--press-scale:.94}
 .chip.num{--press-scale:.9}
@@ -668,23 +765,35 @@ main.wide{max-width:60rem}
 
 .stale{
   margin:0;padding:.6rem max(1rem,var(--left));background:var(--warn);color:var(--ground);
-  font-size:.8rem;text-align:center;position:sticky;top:0;z-index:6;
+  font-size:.8rem;text-align:center;position:sticky;top:var(--bar);z-index:6;
 }
 
 /* The title and its arrows are one control, not a heading with a button bar
    underneath. Arrows are bare glyphs at a 48px target — a white box around a
    chevron is a web form's idea of navigation, not an app's. */
 .titlebar{
-  display:grid;grid-template-columns:var(--tap) minmax(0,1fr) var(--tap);
+  --arrow:var(--tap);
+  display:grid;grid-template-columns:var(--arrow) minmax(0,1fr) var(--arrow);
   align-items:center;padding:1.1rem 0 .5rem;gap:.25rem;
 }
 .titlebar .arrow{
   display:inline-flex;align-items:center;justify-content:center;
-  min-height:var(--tap);min-width:var(--tap);
+  min-height:var(--arrow);min-width:var(--arrow);
   font-family:var(--display);font-size:1.7rem;line-height:1;color:var(--accent);
   text-decoration:none;border-radius:50%;touch-action:manipulation;
   -webkit-touch-callout:none;
 }
+/* Off a phone these are the control somebody taps over and over to walk
+   through dates, and the phone's 48px is a small thing to aim at across a
+   kitchen. They stay bare glyphs — a white box round a chevron is a web form's
+   idea of navigation — and get a bigger target and a fuller mark instead. */
+@media(min-width:640px){
+  .titlebar{--arrow:3.5rem}
+  .titlebar .arrow{font-size:2.1rem}
+}
+/* An arrow with nowhere to go is a placeholder waiting on the shell. It holds
+   its box so nothing moves when the real one lands. */
+.titlebar a.arrow:not([href]){pointer-events:none}
 .titlebar .arrow:active{background:var(--press)}
 .titlebar .title{text-align:center;min-width:0}
 /* The ellipsis needs overflow:hidden, and overflow:hidden clips at the padding
@@ -791,9 +900,13 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
      a spanning item distributes its height across every auto track it covers —
      which pushed the title and the nav apart by a third of the day's length
      each. Only the last track may grow, and it is the one the planner sticks in. */
+  /* The title bar's own top padding is dropped below, because in this layout
+     the detail column starts at the same line and would not get it — so the
+     space belongs to main, where both columns are given it. Without it the day
+     and the month both began hard against the header. */
   main.split{
     display:grid;grid-template-columns:16rem minmax(0,1fr);
-    grid-template-rows:auto auto 1fr;column-gap:2.5rem;
+    grid-template-rows:auto auto 1fr;column-gap:2.5rem;padding-top:1.25rem;
   }
   main.split > .titlebar{grid-area:1/1;padding-top:0}
   main.split > .titlebar h1{font-size:1.5rem}
@@ -803,7 +916,7 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
      row 3 — taller than a landscape tablet, which is precisely the case where
      a sticky element cannot stay wholly on screen. Sized to its content, it
      travels inside that tall area instead of being it. */
-  main.split > .planner{display:block;grid-area:3/1;align-self:start;position:sticky;top:1rem}
+  main.split > .planner{display:block;grid-area:3/1;align-self:start;position:sticky;top:calc(var(--bar) + 1rem)}
   /* Spanning all three rows makes the last one absorb the remaining height,
      which is what gives the sticky planner a tall enough box to travel in. */
   main.split > .detail{grid-area:1/2/4/3;min-width:0}
@@ -997,7 +1110,7 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   margin:0;padding:.85rem 1rem;border-bottom:1px solid var(--rule);
   font-family:var(--display);font-weight:300;font-size:1.15rem;
   display:flex;justify-content:space-between;align-items:baseline;gap:1rem;
-  position:sticky;top:calc(3.2rem + var(--top));z-index:2;background:var(--surface);
+  position:sticky;top:var(--bar);z-index:2;background:var(--surface);
 }
 .sitting > h2 .count{font-family:var(--body);font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sitting > h2 .count.full{color:var(--full)}

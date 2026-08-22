@@ -250,6 +250,118 @@ await page.goto(`${HOME}/calendar/${MONTH}`, { waitUntil: 'load' });
     `${Math.round(early.detail.x)} then ${Math.round(late.detail.x)}`);
 }
 
+// ── Nothing sits under the header ───────────────────────────────────────────
+//
+// The bar is sticky, so anything that sticks under it has to know how tall it
+// is. That height used to be a guess, and it was 25px short: on a landscape
+// tablet the day began hard against the bar, and the planner and the sitting
+// headings slid a good 60px beneath it on the way down the page.
+{
+  await page.goto(`${HOME}/day/${TODAY}`, { waitUntil: 'load' });
+  const rest = await page.evaluate(() => {
+    const bar = document.querySelector('.bar').getBoundingClientRect();
+    const h1 = document.querySelector('.titlebar h1');
+    const ink = document.createRange();
+    ink.selectNodeContents(h1);
+    return {
+      toTitle: ink.getBoundingClientRect().top - bar.bottom,
+      toDetail: document.querySelector('main.split > .detail:not(.sk)').getBoundingClientRect().top - bar.bottom,
+    };
+  });
+  check('the title is not up against the header', rest.toTitle > 8, `${rest.toTitle.toFixed(1)}px`);
+  check('nor is the day beside it', rest.toDetail > 8, `${rest.toDetail.toFixed(1)}px`);
+
+  await page.evaluate(() => scrollTo(0, 500));
+  await page.waitForTimeout(120);
+  const moving = await page.evaluate(() => {
+    const bar = document.querySelector('.bar').getBoundingClientRect();
+    const planner = document.querySelector('main.split > .planner:not(.sk)').getBoundingClientRect();
+    const heading = document.querySelector('.sitting > h2').getBoundingClientRect();
+    return { planner: planner.top - bar.bottom, heading: heading.top - bar.bottom };
+  });
+  check('the planner sticks below the header, not behind it',
+    moving.planner >= 0, `${moving.planner.toFixed(1)}px`);
+  check('and so does a sitting heading', moving.heading >= -0.5, `${moving.heading.toFixed(1)}px`);
+}
+
+// ── Stepping through dates ──────────────────────────────────────────────────
+//
+// The arrows are tapped over and over, and the date is the whole content of
+// the interaction — so the server names each arrow's destination on the link
+// itself, and the tap paints it. Measured in the window before the server has
+// said anything at all.
+{
+  await page.goto(`${HOME}/day/${TODAY}`, { waitUntil: 'load' });
+  const target = await page.locator('.titlebar .arrow[rel=next]').boundingBox();
+  check('the arrows are a bigger target than a phone gives them',
+    target.width >= 56 && target.height >= 56, `${Math.round(target.width)}x${Math.round(target.height)}`);
+
+  await page.locator('.titlebar .arrow[rel=next]').click({ noWaitAfter: true });
+  const stepped = await page.evaluate(() => ({
+    path: location.pathname,
+    heading: document.querySelector('.titlebar h1').textContent.trim(),
+    sub: (document.querySelector('.titlebar .sub') || {}).textContent,
+    next: (document.querySelector('.titlebar .arrow[data-side=next]') || {}).getAttribute
+      ? document.querySelector('.titlebar .arrow[data-side=next]').getAttribute('href') : null,
+    busy: document.getElementById('main').getAttribute('aria-busy'),
+    cards: document.querySelectorAll('.sk-card').length,
+  }));
+  check('the date changes on the tap', stepped.heading === '7 August', stepped.heading);
+  check('and so does the day of the week under it', stepped.sub === 'Friday', stepped.sub);
+  check('with the diary behind a skeleton', stepped.busy === 'true' && stepped.cards >= 3);
+  check('and an arrow that already points at the day after',
+    stepped.next === '/day/2026-08-08', stepped.next || 'no arrow');
+
+  // Which is the point: a second tap lands before the first has been answered.
+  // This one goes to a day nothing on screen can name — the arrow was drawn
+  // here, not sent — so it steps and shimmers rather than steps and lies.
+  await page.locator('.titlebar .arrow[data-side=next]').click({ noWaitAfter: true });
+  const twice = await page.evaluate(() => ({
+    path: location.pathname,
+    busy: document.getElementById('main').getAttribute('aria-busy'),
+    cards: document.querySelectorAll('.sk-card').length,
+    claimed: document.querySelector('.titlebar h1'),
+  }));
+  check('a second tap steps again without waiting for the first',
+    twice.path === '/day/2026-08-08' && twice.busy === 'true' && twice.cards >= 3, twice.path);
+  check('and does not put a date it cannot know on the page', twice.claimed === null);
+
+  await page.waitForFunction(() => document.getElementById('main').getAttribute('aria-busy') === null,
+    null, { timeout: 5000 });
+  const landed = await page.evaluate(() => ({
+    path: location.pathname,
+    heading: document.querySelector('.titlebar h1').textContent.trim(),
+    next: document.querySelector('.titlebar .arrow[rel=next]').getAttribute('href'),
+  }));
+  check('and the diary that arrives is the one for the day showing',
+    landed.path === '/day/2026-08-08' && landed.heading === '8 August',
+    `${landed.path} — ${landed.heading}`);
+  check('with the server\'s own arrows back in place', landed.next === '/day/2026-08-09', landed.next);
+}
+
+// The way back is the one destination a page can always name for itself.
+{
+  await page.goto(`${HOME}/day/${TODAY}`, { waitUntil: 'load' });
+  await page.locator('.titlebar .arrow[rel=next]').click({ noWaitAfter: true });
+  await page.locator('.titlebar .arrow[data-side=prev]').click({ noWaitAfter: true });
+  const corrected = await page.evaluate(() => {
+    const h1 = document.querySelector('.titlebar h1');
+    return { path: location.pathname, heading: h1 ? h1.textContent.trim() : null };
+  });
+  check('stepping back names the day it came from, straight away',
+    corrected.path === `/day/${TODAY}` && corrected.heading === '6 August',
+    `${corrected.path} — ${corrected.heading}`);
+}
+
+// The planner is the other way a date changes on a landscape tablet, and a
+// shimmering title beside a live one reads as a fault.
+{
+  await page.goto(`${HOME}/day/${TODAY}`, { waitUntil: 'load' });
+  await page.locator('main.split > .planner:not(.sk) .pcell[href="/day/2026-08-12"]').click({ noWaitAfter: true });
+  const named = await page.evaluate(() => document.querySelector('.titlebar h1').textContent.trim());
+  check('a day tapped in the planner names itself at once', named === '12 August', named);
+}
+
 // ── Back goes back ──────────────────────────────────────────────────────────
 {
   await page.goto(`${HOME}/calendar/${MONTH}`, { waitUntil: 'load' });

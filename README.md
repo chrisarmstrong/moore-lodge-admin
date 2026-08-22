@@ -184,10 +184,9 @@ mouse and for the moment before the script runs.
 
 **And the view switches on the tap.** A tap on a link is handled in the page:
 the shape of the destination goes up immediately out of what the URL alone says,
-and the server's two flushes land into it as they arrive — the real title ahead
-of the diary, exactly as on a fresh load. The request itself starts on
-`pointerdown`, a beat before the finger lifts. Three things make this safe
-rather than a small framework:
+and the server's two flushes land into it as they arrive — exactly as on a fresh
+load. The request itself starts on `pointerdown`, a beat before the finger
+lifts. Three things make this safe rather than a small framework:
 
 - The client knows only what shape a path is — a month grid or a day — and
   nothing else about the page. Every byte on screen was rendered by the server.
@@ -202,6 +201,35 @@ rather than a small framework:
 
 A build stamp that has moved, an answer that is not HTML, and the redirects at
 `/` and `/today` all fall back to letting the browser do it.
+
+**A link that goes somewhere nameable says so.** A title bar is built from the
+URL and nothing else, so the server already knows the destination's — and
+`ahead()` in `src/views/layout.js` puts it on the link. The date arrows and the
+planner's days carry it, which are the two ways a date is changed, and a tap on
+one paints the new date before a byte has been asked for. Only the diary waits.
+
+The arrows carry two more: the destination's *own* prev and next, named rather
+than worked out on the other side, so the bar that goes up on the tap is a
+working one and a thumb held on "next" walks the dates. Those drawn arrows carry
+no name for where they lead — except the one leading back, which the page can
+always name for itself, so correcting a mis-tap is as immediate as making it.
+Everything else steps and shimmers rather than steps and lies, until the shell
+lands a moment later with the server's own fully-named arrows.
+
+**Anything sticky has to know how tall the header is.** `--bar` is that height —
+a tap target, the bar's padding, its rule, and the notch — and the sitting
+headings, the offline banner and the planner all clear it. It used to be guessed
+at `3.2rem` in one place and ignored in the others, which is 25px short: on a
+landscape tablet the day began hard against the header, and the planner slid a
+good 60px underneath it on the way down the page. The title bar's own top
+padding is dropped in the split layout, because there the detail column starts
+on the same line and would not get it, so the space belongs to `main`.
+
+**The arrows get a bigger target off a phone.** They stay bare glyphs — a white
+box round a chevron is a web form's idea of navigation — but at 48px they were
+a small thing to aim at across a kitchen, and missing one was indistinguishable
+from tapping one that did nothing. 56px from `640px` up, and a full circle of
+wash under the finger.
 
 **The rooms come from the month, whichever page asked.** A day page fetches the
 whole month from freetobook even though it shows one night of it, because the
