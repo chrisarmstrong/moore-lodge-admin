@@ -129,6 +129,44 @@ is('a takeover continuing is not four more arrivals', state('2026-08-06', RIVER)
 is('and it ends as four changeovers', days.get('2026-08-07').departures, 4);
 is('the night after is not flagged', days.get('2026-08-07').wholeHouse, false);
 
+console.log('--- the whole house on top of everything else ---');
+{
+  // Exclusive use has only ever been tested over empty bedrooms. These are the
+  // awkward overlaps: a bedroom freetobook already had a booking against, and
+  // one blocked for maintenance underneath the takeover.
+  const overlap = [{ propertyId: 55682, datedPropertyAvailabilities: [
+    { date: '2026-08-01', unitAvailabilities: [] },
+    { date: '2026-08-02', unitAvailabilities: UNITS.map((u) => ({
+      unitId: u.id, isClosedOut: false, minimumStay: 1, allocation: 1, rate: '199',
+      pseudoUnitAvailabilities: [{
+        pseudoUnitId: u.id + 69000,
+        isBooked: u.id === EXCLUSIVE || u.id === GARDEN,
+        isUnderMaintenance: u.id === BANN,
+      }],
+    })) },
+  ] }];
+  const was = globalThis.fetch;
+  globalThis.fetch = async (url) => ({ ok: true, status: 200, text: async () => JSON.stringify(
+    new URL(url).searchParams.has('from_date')
+      ? overlap
+      : { properties: [{ id: 55682, name: 'Moore Lodge', priorityOrderedUnitIds: ORDER, units: UNITS }] })});
+
+  const night = (await new FreetobookRooms({}).inRange({ from: '2026-08-02', to: '2026-08-02' }, TODAY))
+    .get('2026-08-02');
+  const stateOf = (id) => night.rooms.find((r) => r.id === id).state;
+
+  is('a bedroom already booked under a takeover is not counted twice', night.occupied, 4);
+  is('and is a room like the others', stateOf(GARDEN), 'arriving');
+  // A deliberate choice, not an accident of ordering: with the house let as one,
+  // a bedroom blocked for maintenance is reported as in use. The wrong guess
+  // costs somebody a look at an empty room; the other wrong guess leaves a bed
+  // unmade, and that is the one worth avoiding.
+  is('maintenance under a takeover errs towards making the bed', stateOf(BANN), 'arriving');
+  is('the cottage is no part of the house', stateOf(CHERRY), 'free');
+  is('and the night is flagged', night.wholeHouse, true);
+  globalThis.fetch = was;
+}
+
 console.log('--- counting ---');
 is('rooms let, not rows shown', days.get('2026-08-02').occupied, 3);
 is('lettable excludes exclusive use', days.get('2026-08-02').lettable, 5);
@@ -205,7 +243,12 @@ const html = dayBody({ date: '2026-08-03', sittings: [], rooms: days.get('2026-0
 is('the day header quotes the same figure the month badge does',
   html.includes(`${days.get('2026-08-03').occupied} of ${days.get('2026-08-03').lettable} let`), true);
 is('the changeover is named as one', html.includes('Departed this morning'), true);
-is('a free room is not eleven lines of noise', html.includes('>Free<'), false);
+// Counted rather than string-matched: `includes('>Free<') === false` passes
+// just as happily when the markup changes shape as when free rooms are left
+// out, which makes it a test of nothing in particular.
+is('only the rooms with a morning in them are listed',
+  (html.match(/class="roomrow"/g) || []).length,
+  days.get('2026-08-03').rooms.filter((r) => r.state !== 'free').length);
 is('the day says what the feed cannot see', html.includes('back to back'), true);
 is('a day with no sittings still shows the rooms', html.includes('class="rooms"'), true);
 
@@ -235,6 +278,14 @@ is('the whole house is marked differently', month.includes('class="beds whole"')
 // Four nights had somebody in a bed; the other three show no badge at all.
 is('a quiet night carries nothing', (month.match(/class="beds/g) || []).length, 4);
 is('the month tile counts room nights', month.includes(`<b>${summary.roomNights}</b>`), true);
+// The badge is decorative — it declines pointer events and its bed is
+// aria-hidden — so the cell's own label is the only way the count is spoken.
+// A title attribute is no answer: nothing hovers on a phone.
+is('the day a screen reader hears carries the count',
+  month.includes('2026-08-02, nothing booked, 3 rooms let'), true);
+is('and one room is not "1 rooms"', month.includes('2026-08-03, nothing booked, 1 room let'), true);
+is('the whole house is named, not counted at it',
+  month.includes('2026-08-05, nothing booked, whole house booked'), true);
 
 // The strip is auto-fit, so a skeleton laying out a different number of tiles
 // reflows to a different number of rows the moment the real content lands, and

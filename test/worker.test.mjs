@@ -36,8 +36,13 @@ let onDisk = { status: 'RESERVED' };
 // What a duplicate check would find already sitting in the diary.
 let onTheDay = [];
 let posted = null;
+// How freetobook behaves this test. Answering with no properties is the quiet
+// default: the adapter reads it as "no rooms to speak of" rather than an error,
+// so every test that is not about freetobook is unaffected by it being here.
+let freetobook = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ properties: [] }) });
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
+  if (u.includes('booking-pages')) return freetobook(init);
   if (init.method === 'POST' && u.endsWith('/reservations') && !u.includes('/query')) {
     posted = JSON.parse(init.body);
     return { ok:true, status:200, text: async () => JSON.stringify({ reservation:{
@@ -279,6 +284,63 @@ console.log('--- where it sends you afterwards ---');
   is('an off-site return path is ignored', away.headers.get('location').startsWith('/?done='), true);
   const list = await post(`/booking/${ID}/paid`, { back:'/settle/2026-08' });
   is('a real page of ours is honoured', list.headers.get('location').startsWith('/settle/2026-08?done='), true);
+}
+
+console.log('--- the diary when freetobook is having a bad day ---');
+{
+  // Samson is the dining diary first. The rooms ride alongside it, and the
+  // whole claim of upstairs() is that nothing freetobook does can cost anybody
+  // a booking. Nothing exercised that claim through the Worker until now.
+  const read = async () => {
+    const res = await worker.fetch(new Request(`${ORIGIN}/day/2027-03-04`, {
+      headers: { 'Cf-Access-Jwt-Assertion': await assertion() },
+    }), env, ctx);
+    return { status: res.status, body: await res.text() };
+  };
+
+  freetobook = async () => { throw new TypeError('network down'); };
+  const down = await read();
+  is('a freetobook that falls over still returns the page', down.status, 200);
+  is('and the diary is on it', down.body.includes('Nothing booked in for tea or dinner'), true);
+  is('and the rooms say they were not told', down.body.includes('did not answer'), true);
+  is('rather than reporting an empty house', down.body.includes('0 of'), false);
+
+  freetobook = async () => ({ ok: false, status: 503, text: async () => 'unavailable' });
+  is('an upstream 503 is the same non-event', (await read()).status, 200);
+
+  freetobook = async () => ({ ok: true, status: 200, text: async () => '<html>not json</html>' });
+  is('and so is a body that is not JSON at all', (await read()).status, 200);
+
+  // The page is streamed: the head goes out before the body is built, so a
+  // freetobook that hangs does not make a slow response — it makes one whose
+  // body never ends, and the phone sits on a skeleton. Only the deadline in
+  // src/freetobook.js stops that, so this is the test that it is wired up.
+  //
+  // Real fetch rejects when its signal aborts. A stub that ignores the signal
+  // cannot test a hang; it just hangs the run.
+  freetobook = (init) => new Promise((_, reject) => {
+    init?.signal?.addEventListener('abort', () => reject(init.signal.reason ?? new Error('aborted')));
+  });
+  //
+  // The plain timer below is not belt and braces, it is what makes this run at
+  // all: Node's AbortSignal.timeout uses an unref'd timer, so with nothing else
+  // pending the process exits before the deadline it is here to test ever
+  // fires. (A Worker has no such problem — the request itself is the thing
+  // keeping the lights on.) It doubles as the bail-out: if the deadline never
+  // comes, `hung` is null and the assertion below says so rather than hanging.
+  let bail;
+  const started = Date.now();
+  const hung = await Promise.race([
+    read(),
+    new Promise((resolve) => { bail = setTimeout(() => resolve(null), 8000); }),
+  ]);
+  clearTimeout(bail);
+  const took = Date.now() - started;
+  is('a freetobook that never answers still lets the page finish', hung?.status, 200);
+  is('the diary arrives regardless', !!hung?.body.includes('Nothing booked in for tea or dinner'), true);
+  is('and it does not wait all day about it', took < 5000, true, `${took}ms`);
+
+  freetobook = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ properties: [] }) });
 }
 
 console.log('--- methods Samson does not answer ---');
