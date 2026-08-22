@@ -752,3 +752,8 @@ through the proper channel.
 The one thing the Wix API cannot do is originate a payment. That costs nothing
 here: phone bookings are already recorded unpaid, exactly as the Wix app records
 them.
+
+Phase three is the other side of the seam: our own store behind
+`BookingsRepository`, a public checkout, and Wix switched off. `docs/bookings.md`
+is the architecture for it, written before any of it is built — the model, the
+oversell guard, the money, the vouchers, the messages and the cutover.
