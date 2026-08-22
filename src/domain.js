@@ -168,12 +168,6 @@ export function needsAttention(room) {
   return room.state !== ROOM.free;
 }
 
-/** Rooms with a guest in them tonight. */
-export function isLet(room) {
-  return room.state === ROOM.arriving
-    || room.state === ROOM.staying
-    || room.state === ROOM.let;
-}
 
 /**
  * Wix expires a held or awaiting-payment reservation after ten minutes, but it

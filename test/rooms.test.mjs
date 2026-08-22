@@ -5,6 +5,7 @@ import { roomsSummary } from '../src/calendar.js';
 import { dayBody } from '../src/views/day.js';
 import { monthBody } from '../src/views/month.js';
 import { monthGrid } from '../src/calendar.js';
+import { skeleton, STAT_TILES } from '../src/views/layout.js';
 
 const RIVER = 265847;
 const GARDEN = 265842;
@@ -74,7 +75,7 @@ function next(date) {
 
 let calls = [];
 globalThis.fetch = async (url, init) => {
-  calls.push({ url: String(url), agent: init?.headers?.['user-agent'] });
+  calls.push({ url: String(url), agent: init?.headers?.['user-agent'], signal: init?.signal });
   const u = new URL(url);
   const body = u.searchParams.has('from_date')
     ? availabilityFor(u.searchParams.get('from_date'), u.searchParams.get('to_date'))
@@ -99,6 +100,10 @@ const state = (date, id) => days.get(date)?.rooms.find((r) => r.id === id)?.stat
 console.log('--- transport ---');
 is('the WAF wants a browser-shaped agent', calls.every((c) => /^Mozilla\/5\.0/.test(c.agent)), true);
 is('two calls, not one per night', calls.length, 2);
+// Catching a failure is not the same as bounding a wait. A freetobook that
+// hangs rather than falls over would hold the streamed page open behind its
+// skeleton, with the diary already answered and sitting there waiting on it.
+is('every call carries a deadline', calls.every((c) => c.signal instanceof AbortSignal), true);
 is('the fetch reaches a night further back than the range',
   new URL(calls.find((c) => c.url.includes('from_date')).url).searchParams.get('from_date'), '2026-08-01');
 
@@ -132,6 +137,22 @@ is('departures counted', days.get('2026-08-03').departures, 2);
 is('a unit that vanished from the feed is dropped, not shown free',
   days.get('2026-08-08').rooms.some((r) => r.id === RIVER), false);
 is('and the denominator drops with it', days.get('2026-08-08').lettable, 4);
+
+console.log('--- a night with no rooms in it ---');
+// Answered, but with nothing in it we recognise. "0 of 0 let" is a sentence
+// about an empty house, and this is not one — it is a night we know nothing of.
+const hollow = [{ propertyId: 55682, datedPropertyAvailabilities: [
+  { date: '2026-08-02', unitAvailabilities: [] },
+  { date: '2026-08-03', unitAvailabilities: [] },
+] }];
+const wasFetch = globalThis.fetch;
+globalThis.fetch = async (url) => ({ ok: true, status: 200, text: async () => JSON.stringify(
+  new URL(url).searchParams.has('from_date')
+    ? hollow
+    : { properties: [{ id: 55682, name: 'Moore Lodge', priorityOrderedUnitIds: ORDER, units: UNITS }] })});
+const empty = await new FreetobookRooms({}).inRange({ from: '2026-08-02', to: '2026-08-03' }, TODAY);
+is('goes the way of a night never answered for', empty.size, 0);
+globalThis.fetch = wasFetch;
 
 console.log('--- the month, in one figure ---');
 const summary = roomsSummary(days);
@@ -178,6 +199,11 @@ is('and the page owns up to the blind spot', today.includes('starts tonight'), t
 
 console.log('--- on the page ---');
 const html = dayBody({ date: '2026-08-03', sittings: [], rooms: days.get('2026-08-03') });
+// The same night, counted once. The header used to recount the rows itself,
+// which is a different unit from the badge's tally of what is booked — the same
+// night could be quoted two ways on two screens.
+is('the day header quotes the same figure the month badge does',
+  html.includes(`${days.get('2026-08-03').occupied} of ${days.get('2026-08-03').lettable} let`), true);
 is('the changeover is named as one', html.includes('Departed this morning'), true);
 is('a free room is not eleven lines of noise', html.includes('>Free<'), false);
 is('the day says what the feed cannot see', html.includes('back to back'), true);
@@ -210,12 +236,39 @@ is('the whole house is marked differently', month.includes('class="beds whole"')
 is('a quiet night carries nothing', (month.match(/class="beds/g) || []).length, 4);
 is('the month tile counts room nights', month.includes(`<b>${summary.roomNights}</b>`), true);
 
+// The strip is auto-fit, so a skeleton laying out a different number of tiles
+// reflows to a different number of rows the moment the real content lands, and
+// the grid below jumps — the one thing the skeleton is there to prevent.
+is('the skeleton lays out as many tiles as the month has',
+  // class="stat...", not the class="stats" wrapper they all sit in.
+  (skeleton('month').match(/sk-tile/g) || []).length, (month.match(/class="stat(?!s)/g) || []).length);
+is('and the count is stated once, not twice', (skeleton('month').match(/sk-tile/g) || []).length, STAT_TILES);
+
 const unlit = monthBody({ month: '2026-08', weeks: monthGrid('2026-08', new Map(), null), summary: emptySummary(), rooms: null, today: '2026-08-03' });
 is('no feed means a dash, never a nought', unlit.includes('<b>&mdash;</b>'), true);
 
 function emptySummary() {
   return { sittings: 0, covers: 0, toSettle: 0, toSettleGuests: 0, abandoned: 0, abandonedGuests: 0,
     inProgress: 0, hidden: 0, offDiary: 0, offDiaryGuests: 0, seatsOffered: 0, occupancy: null };
+}
+
+console.log('--- a cache that will not have it ---');
+// put() rejecting is the workers.dev case the transport's try/catch is there
+// for, but a rejection handed to waitUntil never reaches a synchronous catch:
+// it escapes as an uncaught error on every miss instead.
+{
+  const handed = [];
+  globalThis.caches = { default: {
+    match: async () => undefined,
+    put: async () => { throw new Error('not cacheable here'); },
+  } };
+  const survived = await new FreetobookRooms({}, { waitUntil: (p) => handed.push(p) })
+    .inRange({ from: '2026-08-02', to: '2026-08-03' }, TODAY)
+    .then(() => true, () => false);
+  is('a cache that refuses the write does not fail the read', survived, true);
+  is('and what it handed off will not throw later',
+    (await Promise.allSettled(handed)).every((r) => r.status === 'fulfilled'), true);
+  delete globalThis.caches;
 }
 
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');

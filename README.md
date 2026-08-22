@@ -91,6 +91,12 @@ alongside Wix, not in front of it, and a failure is caught in `upstairs()` and
 turned into a null the views know how to say out loud. Nothing about a
 freetobook outage should cost anybody a booking.
 
+Catching a failure is not the same as bounding a wait, so each call carries an
+`AbortSignal.timeout` of 2.5 seconds. Cold calls measure around a second; the
+deadline is there for the one that never comes back, which would otherwise hold
+the streamed page open behind its skeleton with the diary already answered and
+waiting on it.
+
 Named guests need freetobook's private per-booking feed, which is a paid option
 on their account and a different adapter behind the same `RoomsRepository`
 interface. Nothing in the views would change.

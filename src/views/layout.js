@@ -129,13 +129,21 @@ export function pageTail() {
 }
 
 /**
+ * How many tiles the month's stats strip holds. The skeleton has to lay out the
+ * same number the body will: the strip is `auto-fit`, so a miscount reflows it
+ * to a different number of rows the moment the real content lands, and the
+ * whole grid below jumps — which is the one thing the skeleton exists to stop.
+ */
+export const STAT_TILES = 6;
+
+/**
  * Shown while the diary is on its way, then hidden by a stylesheet that
  * arrives with the real content. No script, no flash of empty page, and the
  * shape matches what replaces it so nothing jumps.
  */
 export function skeleton(kind) {
   const rows = kind === 'month'
-    ? `<div class="sk-stats">${'<div class="sk-tile"></div>'.repeat(5)}</div>
+    ? `<div class="sk-stats">${'<div class="sk-tile"></div>'.repeat(STAT_TILES)}</div>
        <div class="sk-grid">${'<div class="sk-cell"></div>'.repeat(35)}</div>`
     : `${'<div class="sk-card"><div class="sk-line w40"></div><div class="sk-line w70"></div><div class="sk-line w55"></div></div>'.repeat(3)}`;
   return `<div id="sk" class="sk" aria-hidden="true">${rows}</div>`;
@@ -563,13 +571,17 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 
 /* The bed count lives out of the flow in the corner of the cell. In flow it
    cost a line of height, and at 45px a month cell has none to give — the phone
-   layout is a date, a circle, and that is the lot. It sits under the invisible
-   .open anchor that covers the cell, which is only a problem if it wants a tap,
-   and it does not: the day it belongs to is the tap. */
+   layout is a date, a circle, and that is the lot.
+
+   pointer-events:none is load-bearing, not tidiness. The whole cell is covered
+   by an invisible .open anchor, and a positioned badge over it takes the tap
+   and does nothing with it — a dead spot on precisely the nights somebody wants
+   to open, and on a phone it sits right where the thumb lands. Nothing here
+   wants a tap: the day it belongs to is the tap. */
 .beds{
-  position:absolute;top:.3rem;right:.35rem;z-index:1;
+  position:absolute;top:.3rem;right:.35rem;
   display:inline-flex;align-items:center;gap:.15rem;
-  padding:.05rem .28rem .05rem .22rem;border-radius:999px;
+  padding:.05rem .28rem .05rem .22rem;border-radius:999px;pointer-events:none;
   background:var(--sunk);border:1px solid var(--rule);color:var(--muted);
   font-size:.64rem;line-height:1.5;font-variant-numeric:tabular-nums;
 }

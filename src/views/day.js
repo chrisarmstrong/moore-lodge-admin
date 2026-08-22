@@ -1,7 +1,7 @@
 import { escape, BED } from './layout.js';
 import { dateLabel, shiftDate, localDate, localMonth, WEEKDAY_INITIALS } from '../time.js';
 import {
-  statusLabel, paymentLabel, roomStateLabel, needsAttention, isLet,
+  statusLabel, paymentLabel, roomStateLabel, needsAttention,
   PAYMENT, STATUS, DISPOSITION, ROOM,
 } from '../domain.js';
 import { availableFor, permits, NOTE_LIMIT } from '../actions.js';
@@ -155,7 +155,6 @@ function roomsPanel(rooms, date, now) {
   }
 
   const listed = rooms.rooms.filter(needsAttention);
-  const let_ = rooms.rooms.filter(isLet).length;
 
   const house = rooms.wholeHouse
     ? `<p class="wholehouse">${BED} <span><b>Whole house</b> &mdash; exclusive use is booked,
@@ -165,7 +164,8 @@ function roomsPanel(rooms, date, now) {
   // A night the lodge has taken off sale entirely comes back as every room
   // closed out, one row each. Eleven identical lines say the same thing eleven
   // times and bury the one fact worth reading, which is that it is shut.
-  const shut = listed.length === rooms.rooms.length
+  const shut = rooms.rooms.length > 0
+    && listed.length === rooms.rooms.length
     && listed.every((room) => room.state === ROOM.closed);
 
   const body = shut
@@ -184,7 +184,7 @@ function roomsPanel(rooms, date, now) {
   return `<section class="rooms">
     <h2>
       <span>Rooms</span>
-      <span class="count">${let_} of ${rooms.lettable} let${rooms.departures
+      <span class="count">${rooms.occupied} of ${rooms.lettable} let${rooms.departures
         ? ` &middot; ${rooms.departures} to turn round` : ''}</span>
     </h2>
     ${house}${body}${blindSpot}

@@ -96,7 +96,12 @@ export class FreetobookRooms {
       // so a caller gets null for it and can say it was never told.
       if (!tonight) continue;
       const before = shiftDate(date, -1);
-      days.set(date, roomDay(date, units, tonight, nights.get(before), nights.has(before)));
+      const day = roomDay(date, units, tonight, nights.get(before), nights.has(before));
+      // Answered, but with no unit in it we recognise. There is nothing to say
+      // about such a night and "0 of 0 let" says it wrongly, so it goes the
+      // same way as a date that was never answered for at all.
+      if (day.rooms.length === 0) continue;
+      days.set(date, day);
     }
     return days;
   }

@@ -27,6 +27,18 @@ const WIDGET_TOKEN = '5cWUXm0z5BjtoXzCF6KQUnHkptuvdz0ODcSNPVZGpwaZ9cmmOl21HdTOOe
  */
 const USER_AGENT = 'Mozilla/5.0 (compatible; MooreLodge/1.0; +https://moorelodge.co.uk)';
 
+/**
+ * How long the rooms get before the page goes on without them.
+ *
+ * Catching a failure is not the same as bounding a wait: a freetobook that
+ * hangs rather than falls over would hold the streamed body open behind a
+ * skeleton for as long as it liked, and the diary — which had already answered
+ * — would be sitting there waiting on it. Cold calls measure around a second,
+ * so this is generous rather than tight; it exists for the case that never
+ * comes back at all.
+ */
+const BUDGET_MS = 2500;
+
 export class FreetobookError extends Error {
   constructor(path, status) {
     super(`freetobook ${path} returned ${status}`);
@@ -88,6 +100,9 @@ export class Freetobook {
     const work = (async () => {
       const response = await fetch(url, {
         headers: { accept: 'application/json', 'user-agent': USER_AGENT },
+        // Aborts the request rather than merely abandoning it, and surfaces as
+        // a rejection the caller already knows how to turn into an empty strip.
+        signal: AbortSignal.timeout(BUDGET_MS),
       });
       if (!response.ok) throw new FreetobookError(path, response.status);
       const body = await response.text();
@@ -100,7 +115,11 @@ export class Freetobook {
           },
         }));
         if (store) {
-          if (this.ctx?.waitUntil) this.ctx.waitUntil(store); else await store;
+          // The catch below only ever sees a synchronous throw. Handed to
+          // waitUntil unguarded, a rejected put — the workers.dev case this
+          // whole block is here for — escapes as an uncaught error instead.
+          const quietly = store.catch(() => {});
+          if (this.ctx?.waitUntil) this.ctx.waitUntil(quietly); else await quietly;
         }
       } catch {
         // not cacheable here; the caller still gets its data
