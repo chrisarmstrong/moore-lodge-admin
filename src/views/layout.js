@@ -578,14 +578,22 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .beds.whole{background:var(--accent);border-color:var(--accent);color:var(--ground)}
 .bedicon{width:.72rem;height:.5rem;fill:none;stroke:currentColor;stroke-width:1.5;
   stroke-linecap:round;stroke-linejoin:round}
-/* Seven columns on a 375px screen leave a cell about 48px wide. The date takes
-   15 of them and the badge, bed and all, wants 30 — which is how a two-digit
-   date ended up underneath the bed. The bed is the part that can go: the count
-   is the fact, and the outlined pill in the corner is already nothing like the
-   bare date opposite it or the filled circle underneath. */
+/* On a phone the badge comes out of the corner and goes under the covers
+   circle, last in the cell. Seven columns on a 375px screen leave about 48px,
+   and sharing that line with the date left the bed sitting on top of anything
+   with two digits in it. A line of its own is the whole cell wide, which is
+   room enough for the bed to come back — and the bed is what stops a second
+   small number reading as another date.
+
+   Ordered rather than moved in the markup: the phone cell is a flex column, so
+   pushing the badge behind the items that default to order 0 puts it under the
+   circle without the wide layout, which is not flex at all, noticing. */
 @media(max-width:560px){
-  .beds{top:.28rem;right:.28rem;padding:.05rem .24rem;font-size:.62rem}
-  .cell .bedicon{display:none}
+  .cell .beds{
+    position:static;order:1;align-self:center;
+    padding:.02rem .26rem .02rem .2rem;font-size:.6rem;
+  }
+  .cell .bedicon{width:.62rem;height:.44rem}
 }
 /* Drawn at badge size it disappeared beside a sentence. */
 .wholehouse .bedicon{width:1.05rem;height:.75rem;flex:none}
