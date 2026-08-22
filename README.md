@@ -55,7 +55,8 @@ freetobook's public availability feed, the same one `moorelodge.co.uk` prices a
 stay from, proxied in `src/freetobook.js` and mapped in
 `src/adapters/freetobook-rooms.js`.
 
-**It is occupancy, not bookings.** The feed says a room is taken. It does not
+**It is occupancy, not bookings.** The feed says how much of a unit is left to
+sell, which is the same thing as saying a room is taken. It does not
 say by whom, for how long, or when they are expected. That is enough for
 housekeeping to know a bed is being slept in, and it is the whole of what the
 screen claims — the page says so itself, at the bottom of the room list, because
@@ -616,14 +617,32 @@ in `inRange` and not in a view.
 
 **A month at a time is fine.** `from_date`/`to_date` spanning forty nights comes
 back in one response of about 80KB, so there is no paging to do and no reason to
-fetch a day at a time.
+fetch a day at a time. 181 nights still answers correctly; somewhere beyond that
+it stops.
 
-**Occupancy hangs off `pseudoUnitAvailabilities`, not the unit.** `allocation`
-and `isClosedOut` describe what is for sale; `isBooked` on the pseudo-unit is
-what says somebody is in it. Every unit here has an allocation of one, so it
-reads as a boolean — but it is counted rather than tested, because a unit sold
-as several identical rooms would otherwise report one bed made when four were
-slept in.
+**And when it stops, it does not say so.** An unservable range — reaching into
+the past, or too far forward — comes back `200` carrying two or three unrelated
+dates. `inRange` therefore refuses an answer that does not cover its own first
+night, because two arbitrary nights and twenty-eight silent ones is a month that
+renders as almost nothing booked.
+
+**`allocation` says a room is taken; `isBooked` usually does not.** This was
+read the other way round first, and it hid real bookings. `allocation` is how
+much of a unit is still sellable that night and goes to nought the moment
+something takes the room. `isBooked`, on the pseudo-unit, is a second flag that
+is frequently just not set: over six months of the live feed, twelve of the
+sixteen occupied room-nights carried `allocation: 0` with `isBooked: false`,
+among them a solid week in Samson's Suite. The public site never had the bug —
+`worker.js` has always tested `unit.allocation < 1`.
+
+Because `allocation` is what is *left*, it must never stand in for how many
+rooms a unit has; at nought it would say a sold-out unit has no rooms rather
+than none free. `pseudoUnitAvailabilities.length` is the capacity.
+
+**Being off sale does not touch inventory.** A closed-out night keeps
+`allocation: 1` and sets `isClosedOut`, so "shut" and "sold" never have to be
+untangled from one number. Maintenance has never appeared in live data at all,
+so the adapter treats it as possibly costing inventory and still not a guest.
 
 **Its WAF wants a browser-shaped User-Agent** and Workers send none by default,
 so an unadorned `fetch` gets a 403. The same lesson as the public site's

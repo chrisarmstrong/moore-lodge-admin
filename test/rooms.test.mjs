@@ -27,14 +27,22 @@ const UNITS = [
 const ORDER = [CHERRY, RIVER, GARDEN, BANN, CARSON, EXCLUSIVE];
 
 /**
- * `book` is keyed by date. Anything not named is free.
- *   b  booked        m  under maintenance        c  closed out
+ * Keyed by date. Anything not named is free.
+ *
+ *   b  taken, the way the live feed usually says it: allocation spent, and
+ *      isBooked left false. Twelve of sixteen occupied room-nights over six
+ *      months of live data look like this, so it is the default here too.
+ *   B  taken with isBooked set as well — the rarer shape, and the only one
+ *      this adapter used to be able to see.
+ *   m  under maintenance, and pessimistically also costing inventory, since
+ *      live data has never shown maintenance and cannot settle whether it does
+ *   c  closed out — which keeps allocation, as the live feed does
  *   x  absent from the feed entirely
  */
 const NIGHTS = {
   // lead-in night: the range asked for starts on the 2nd
-  '2026-08-01': { [RIVER]: 'b', [CHERRY]: 'b' },
-  '2026-08-02': { [RIVER]: 'b', [CHERRY]: 'b', [GARDEN]: 'b' },
+  '2026-08-01': { [RIVER]: 'B', [CHERRY]: 'b' },
+  '2026-08-02': { [RIVER]: 'B', [CHERRY]: 'b', [GARDEN]: 'b' },
   '2026-08-03': { [CHERRY]: 'b', [BANN]: 'm' },
   '2026-08-04': { [CARSON]: 'c' },
   '2026-08-05': { [EXCLUSIVE]: 'b' },
@@ -54,11 +62,13 @@ function availabilityFor(from, to) {
         unitId: u.id,
         isClosedOut: marks[u.id] === 'c',
         minimumStay: 1,
-        allocation: 1,
+        // Spent by anything holding the room, and left alone by a close-out —
+        // which is exactly how the live feed behaves.
+        allocation: ['b', 'B', 'm'].includes(marks[u.id]) ? 0 : 1,
         rate: '199',
         pseudoUnitAvailabilities: [{
           pseudoUnitId: u.id + 69000,
-          isBooked: marks[u.id] === 'b',
+          isBooked: marks[u.id] === 'B',
           isUnderMaintenance: marks[u.id] === 'm',
         }],
       })),
@@ -106,6 +116,17 @@ is('two calls, not one per night', calls.length, 2);
 is('every call carries a deadline', calls.every((c) => c.signal instanceof AbortSignal), true);
 is('the fetch reaches a night further back than the range',
   new URL(calls.find((c) => c.url.includes('from_date')).url).searchParams.get('from_date'), '2026-08-01');
+
+console.log('--- which signal says a room is taken ---');
+// This was built on isBooked and it was wrong: the live feed usually spends
+// allocation and leaves isBooked false, so real bookings — a Friday in Carson
+// Room, a week in Samson's Suite — showed as an empty house. The public site
+// never had the bug; it has always read allocation.
+is('inventory spent means the room is taken, isBooked or not', state('2026-08-02', GARDEN), 'arriving');
+is('and isBooked on its own still counts', state('2026-08-02', RIVER), 'staying');
+is('a room off sale keeps its inventory and is not a guest', state('2026-08-04', CARSON), 'closed');
+is('nor is one held back for repairs', state('2026-08-03', BANN), 'maintenance');
+is('the closed night has nobody in it', days.get('2026-08-04').occupied, 0);
 
 console.log('--- what a night is doing ---');
 is('a stay running in from before the range is not an arrival', state('2026-08-02', RIVER), 'staying');
@@ -175,6 +196,26 @@ is('departures counted', days.get('2026-08-03').departures, 2);
 is('a unit that vanished from the feed is dropped, not shown free',
   days.get('2026-08-08').rooms.some((r) => r.id === RIVER), false);
 is('and the denominator drops with it', days.get('2026-08-08').lettable, 4);
+
+console.log('--- an answer that is not to the question asked ---');
+{
+  // A range freetobook will not serve — reaching back, or too far forward —
+  // comes back 200 with a couple of unrelated dates rather than an error. Read
+  // as fact, that turns a month of rooms into two arbitrary nights and a lot of
+  // silent ones, each of which renders as though nothing were booked.
+  const sliver = [{ propertyId: 55682, datedPropertyAvailabilities: [
+    { date: '2026-08-24', unitAvailabilities: [] },
+    { date: '2026-08-25', unitAvailabilities: [] },
+  ] }];
+  const was = globalThis.fetch;
+  globalThis.fetch = async (url) => ({ ok: true, status: 200, text: async () => JSON.stringify(
+    new URL(url).searchParams.has('from_date')
+      ? sliver
+      : { properties: [{ id: 55682, name: 'Moore Lodge', priorityOrderedUnitIds: ORDER, units: UNITS }] })});
+  const nonsense = await new FreetobookRooms({}).inRange({ from: '2026-08-02', to: '2026-08-08' }, TODAY);
+  is('an answer that misses its own first night is no answer', nonsense.size, 0);
+  globalThis.fetch = was;
+}
 
 console.log('--- a night with no rooms in it ---');
 // Answered, but with nothing in it we recognise. "0 of 0 let" is a sentence

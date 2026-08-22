@@ -6,8 +6,8 @@
  *
  * ## What this can and cannot know
  *
- * The feed is the public one behind the booking page: per unit, per night, a
- * flag saying the room is taken. There is no reservation in it — no guest name,
+ * The feed is the public one behind the booking page: per unit, per night, how
+ * much of it is left to sell. There is no reservation in it — no guest name,
  * no arrival time, no phone number, nothing to act on but the fact that
  * somebody is in the room. That is enough for housekeeping to know a bed is
  * being slept in, and it is the whole of what this adapter promises.
@@ -87,6 +87,15 @@ export class FreetobookRooms {
     const units = lettableUnits(property);
     const nights = withExclusiveUse(readNights(availability, property.id), property);
 
+    // An unacceptable range is answered, not refused: a 200 carrying two or
+    // three dates that have nothing to do with what was asked for. A past
+    // `from_date` does it, and so does reaching too far forward — six months
+    // out collapsed to the same two nights in August. Reading that as fact is
+    // how a month of rooms becomes two arbitrary nights and twenty-eight
+    // silent ones, so an answer that does not cover its own first night is
+    // treated as no answer at all.
+    if (!nights.has(start)) return new Map();
+
     const days = new Map();
     for (let date = start; date <= to; date = shiftDate(date, 1)) {
       const tonight = nights.get(date);
@@ -131,7 +140,23 @@ function lettableUnits(property) {
     }));
 }
 
-/** `Map<date, {units: Map<unitId, Night>, wholeHouse: boolean}>`. */
+/**
+ * `Map<date, {units: Map<unitId, Night>, wholeHouse: boolean}>`.
+ *
+ * **`allocation` is the signal; `isBooked` is not.** This was built the other
+ * way round first and it was wrong. `allocation` is how much of the unit is
+ * still sellable that night, and it goes to nought the moment something takes
+ * the room. `isBooked`, on the pseudo-unit, is a second flag that is often
+ * simply not set — over six months of the live feed, twelve of the sixteen
+ * occupied room-nights carried `allocation: 0` with `isBooked: false`,
+ * including a solid week in Samson's Suite. Reading `isBooked` alone showed an
+ * empty house on nights that were sold. The public site never had this bug: it
+ * has always tested `unit.allocation < 1`.
+ *
+ * Being off sale is expressed separately and does not touch inventory — a
+ * closed-out night keeps `allocation: 1` — so the two never have to be
+ * untangled from one number.
+ */
 function readNights(availability, propertyId) {
   const property = (availability || []).find((p) => p.propertyId === propertyId)
     || (availability || [])[0];
@@ -140,15 +165,26 @@ function readNights(availability, propertyId) {
   for (const day of property?.datedPropertyAvailabilities || []) {
     const units = new Map();
     for (const unit of day.unitAvailabilities || []) {
-      // Every unit at Moore Lodge has an allocation of one, so this is a
-      // boolean in practice. It is counted rather than tested because a unit
-      // sold as several identical rooms would otherwise report one bed made
-      // when four were slept in.
       const pseudo = unit.pseudoUnitAvailabilities || [];
+      // The rooms this unit *has*. `allocation` is what is left of them, so it
+      // must never stand in for the total — at nought it would say a sold-out
+      // unit has no rooms rather than none free.
+      const capacity = pseudo.length || 1;
+      const remaining = Number.isFinite(unit.allocation)
+        ? Math.min(Math.max(unit.allocation, 0), capacity)
+        : capacity;
+      const booked = pseudo.filter((p) => p.isBooked).length;
+      const maintenance = pseudo.filter((p) => p.isUnderMaintenance).length;
+
       units.set(unit.unitId, {
-        booked: pseudo.filter((p) => p.isBooked).length,
-        of: pseudo.length || unit.allocation || 1,
-        maintenance: pseudo.some((p) => p.isUnderMaintenance),
+        // Whichever of the two signals shows more of the unit gone, less
+        // whatever maintenance accounts for — so a room held back for repairs
+        // is not counted as somebody sleeping in it, whether or not blocking it
+        // happens to consume inventory. Live data has never shown maintenance
+        // at all, so this side of it is reasoned rather than observed.
+        booked: Math.min(capacity, Math.max(booked, capacity - remaining - maintenance)),
+        of: capacity,
+        maintenance: maintenance > 0,
         closed: !!unit.isClosedOut,
       });
     }
