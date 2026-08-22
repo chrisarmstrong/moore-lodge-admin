@@ -29,10 +29,16 @@ const pages = {
   '/': render(monthShell({ month:'2026-08', today:'2026-08-06' }), monthBody({ month:'2026-08', weeks:monthGrid('2026-08', byDate), summary:monthSummary(byDate), today:'2026-08-06' })),
   '/new': (() => {
     const { newShell, newBody } = newView;
+    const visible = [...experiences.values()].filter((e) => e.visible);
     return render(newShell({ date:'2026-08-06' }), newBody({
       date:'2026-08-06', today:'2026-08-06',
-      experiences: [...experiences.values()].filter((e) => e.visible),
-      sittings: (byDate.get('2026-08-06') || []).filter((s) => s.bookings.length > 0),
+      experiences: visible, experience: visible[0],
+      slots: [
+        { startsAt:new Date('2026-08-06T11:30:00Z'), minutes:120, full:false },
+        { startsAt:new Date('2026-08-06T12:30:00Z'), minutes:120, full:false },
+      ],
+      running: new Set(['2026-08-06','2026-08-08']),
+      sittings: byDate.get('2026-08-06') || [],
     }));
   })(),
   '/day': render(dayShell({ date:'2026-08-06' }), dayBody({ date:'2026-08-06', sittings: byDate.get('2026-08-06'), weeks:monthGrid('2026-08', byDate), month:'2026-08', today:'2026-08-06' })),

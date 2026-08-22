@@ -20,8 +20,9 @@ import { readDraft } from './draft.js';
 import { page, pageHead, pageTail, skeleton, RETIRE_SKELETON, escape } from './views/layout.js';
 import { ACTIONS, permits } from './actions.js';
 import {
-  localDate, localMonth, monthWindow, dayWindow, isValidMonth, isValidDate,
+  localDate, localMonth, monthWindow, dayWindow, shiftDate, isValidMonth, isValidDate,
 } from './time.js';
+import { NEAR_DAYS } from './views/new.js';
 
 /** Where a staff member is actually meant to arrive. */
 const SAMSON = 'https://samson.moorelodge.co.uk';
@@ -157,6 +158,37 @@ async function take(request, url, env, staff) {
   }
 }
 
+/**
+ * The week of chips, and the chosen day, in as few calls as it takes.
+ *
+ * One request covers the chip week, which answers both "does this experience
+ * run on that day" for every chip and "what is on at the chosen date" — the
+ * same data, read twice. A date reached through the picker can fall outside
+ * that week, and then it costs a second request rather than a wider first one.
+ */
+async function schedule(bookings, date, experience) {
+  const experienceId = experience ? experience.id : null;
+  const first = localDate();
+  const week = Array.from({ length: NEAR_DAYS }, (_, step) => shiftDate(first, step));
+
+  const requests = [bookings.scheduledSlots({
+    ...dayWindow(week[0]),
+    end: dayWindow(week[week.length - 1]).end,
+    experienceId,
+  })];
+  if (!week.includes(date)) requests.push(bookings.scheduledSlots({ ...dayWindow(date), experienceId }));
+
+  const found = (await Promise.all(requests)).flat();
+  const byDate = new Map();
+  for (const slot of found) {
+    const day = localDate(slot.startsAt);
+    if (!byDate.has(day)) byDate.set(day, []);
+    byDate.get(day).push(slot);
+  }
+
+  return { slots: byDate.get(date) || [], running: new Set(byDate.keys()) };
+}
+
 /** An archived or hidden experience is not something to sell down the phone. */
 function offerable(experiences) {
   return [...experiences.values()].filter((experience) => experience.visible);
@@ -236,13 +268,23 @@ async function route(url, env, staff, ctx) {
     // string — so both spellings of the same request land here.
     const date = newMatch[1] || url.searchParams.get('date') || localDate();
     if (!isValidDate(date)) return badRequest('That is not a date.');
+    const wanted = url.searchParams.get('experience');
     return stream({ ...newShell({ date }), version: buildVersion(env), flash }, 'day', async () => {
-      const [{ sittingsByDate }, experiences] = await Promise.all([
+      const [{ sittingsByDate }, all] = await Promise.all([
         diary(bookings, dayWindow(date)),
         bookings.experiences(),
       ]);
-      const sittings = (sittingsByDate.get(date) || []).filter((sitting) => sitting.bookings.length > 0);
-      return newBody({ date, today: localDate(), experiences: offerable(experiences), sittings });
+      const experiences = offerable(all);
+      // An unknown id in the query string falls back rather than 404s: it is a
+      // chip somebody tapped, not an address they typed.
+      const experience = experiences.find((each) => each.id === wanted) || experiences[0] || null;
+
+      const slots = await schedule(bookings, date, experience);
+      return newBody({
+        date, today: localDate(), experiences, experience,
+        ...slots,
+        sittings: sittingsByDate.get(date) || [],
+      });
     });
   }
 

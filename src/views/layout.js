@@ -640,6 +640,9 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .chipwhat{flex:1;color:var(--muted);font-size:.85rem}
 .chipleft{font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .chip.spent .chipleft{color:var(--warn)}
+/* A day the experience does not run. Dimmed and dashed, still tappable: it is
+   information, not a locked door. */
+.chip.shut{border-style:dashed;color:var(--muted)}
 /* Selection is a filled chip, not a tick: it has to be readable at a glance
    from a phone held at arm's length while somebody is talking. */
 .chip.on,.chip:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--ground)}

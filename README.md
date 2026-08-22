@@ -407,6 +407,31 @@ already happening.
 rules, and rules want testing without a browser or a network — what comes out is
 a `BookingDraft` and what it knows about Wix is nothing.
 
+**The sittings come from the schedule, not the diary.** They used to be "times
+that already have bookings that day", which made a quiet Tuesday look identical
+to a Tuesday the lodge is shut, gave the first caller of the week nothing to
+choose from, and hid any experience nobody had booked yet. `scheduledSlots`
+reads `Get Scheduled Time Slots` instead: slots come from the experience's own
+`businessSchedule`, which overrides the location's, and that endpoint never
+returns a slot outside opening hours — so a date with no slots is a date nothing
+runs, and one call over the chip week answers both "which days" and "which
+sittings" at once.
+
+`partySize` is asked for by that API and is deliberately given as 1. It is a
+probe for what is running, not a filter: a sitting that will not fit the party
+is still worth showing, because somebody on the phone may decide to squeeze
+them in.
+
+**Capacity informs; it never blocks.** A full sitting says Full and stays
+selectable. A day the experience does not run is dashed and says so, and remains
+a link. Staff can seat eleven at a table for ten, and the form's job is to tell
+them what they are deciding rather than to decide it — which is also why nothing
+on that page is ever `disabled`.
+
+**The experience chips only appear when there are two.** Choosing from a list of
+one is a decision nobody should be asked to make, so with a single experience it
+is simply what a booking is for.
+
 **Three taps before any typing.** When, which sitting, how many — chips, not
 pickers. A native date or time control on a phone is a modal wheel somebody has
 to aim at one-handed, and the form used to open two of them before it asked

@@ -52,11 +52,24 @@ write('chase', listShell({ kind: 'chase', period: month }),
 write('called-off', listShell({ kind: 'called-off', period: today }),
   listBody({ kind: 'called-off', period: today, sittings: daySittings, back: `/called-off/${today}` }));
 const { newShell, newBody } = await import('../src/views/new.js');
+const visible = [...experiences.values()].filter((e) => e.visible);
+// Two sittings the lodge runs, one of which nobody has booked into yet — the
+// case the old form could not show at all.
+const SLOTS = [
+  { startsAt: new Date('2026-08-06T11:30:00Z'), minutes: 120, full: false },
+  { startsAt: new Date('2026-08-06T12:30:00Z'), minutes: 120, full: false },
+  { startsAt: new Date('2026-08-06T13:30:00Z'), minutes: 120, full: false },
+];
+const RUNNING = new Set([today, '2026-08-08', '2026-08-09']);
 write('new', newShell({ date: today }),
-  newBody({ date: today, today, experiences: [...experiences.values()].filter((e) => e.visible), sittings: daySittings }));
+  newBody({
+    date: today, today, experiences: visible, experience: visible[0],
+    slots: SLOTS, running: RUNNING, sittings: daySittings,
+  }));
 write('new-errors', newShell({ date: today }),
   newBody({
-    date: today, today, experiences: [...experiences.values()].filter((e) => e.visible), sittings: daySittings,
+    date: today, today, experiences: visible, experience: visible[0],
+    slots: SLOTS, running: RUNNING, sittings: daySittings,
     values: { date: today, sitting: 'other', time: '', party: 'other', partySize: '0', name: '', phone: '', email: 'nope@' },
     errors: ['Give a time, like 12:30.', 'How many people?', 'A name is needed.',
       'A phone number is needed — it is how the booking is confirmed.', 'That email address does not look right.'],

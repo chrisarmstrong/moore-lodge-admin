@@ -12,6 +12,7 @@ const RESERVATIONS_QUERY = '/table-reservations/reservations/v1/reservations/que
 const RESERVATION = '/table-reservations/reservations/v1/reservations';
 const EXPERIENCES_QUERY = '/table-reservations/experiences/v1/experiences/query';
 const LOCATIONS_QUERY = '/table-reservations/reservation-locations/v1/reservation-locations/query';
+const SCHEDULED_SLOTS = '/table-reservations/reservations/v1/scheduled-time-slots';
 
 // The schedule and the experiences barely change; reservations change while
 // somebody is looking at them, so they are never served from cache.
@@ -107,6 +108,44 @@ export class WixBookings {
    * the booking since. Reading it fresh turns "your screen is out of date" into
    * a non-event.
    */
+  /**
+   * When the lodge actually runs something, as against when somebody happened
+   * to book.
+   *
+   * The form used to build its sittings out of the diary, which meant an empty
+   * day looked exactly like a day nothing runs, and the first booking of the
+   * week had nothing to choose from. This is the schedule instead: slots come
+   * from the experience's own `businessSchedule`, which overrides the
+   * location's, and this endpoint never returns a slot outside opening hours —
+   * so a date with no slots is a date the lodge is shut for that experience.
+   *
+   * `partySize` is asked for and deliberately given as 1. It is a probe for
+   * what is running, not a filter: a sitting that cannot fit the party is still
+   * worth showing, because somebody on the phone may decide to squeeze them in.
+   */
+  async scheduledSlots({ start, end, experienceId = null, partySize = 1 }) {
+    const body = {
+      reservationLocationId: await this.locationId(),
+      timeRange: { startDate: start.toISOString(), endDate: end.toISOString() },
+      partySize,
+      // Absent from the published request schema, named in the Experiences
+      // docs — the same asymmetry as experienceId on Create Reservation.
+      ...(experienceId ? { experienceId } : {}),
+    };
+
+    const { timeSlots = [] } = await this.wix.post(SCHEDULED_SLOTS, body);
+
+    return timeSlots
+      .filter((slot) => slot.startDate)
+      .map((slot) => ({
+        startsAt: new Date(slot.startDate),
+        minutes: slot.duration ?? null,
+        // UNAVAILABLE at a party of one means there is genuinely no room.
+        full: slot.status === 'UNAVAILABLE',
+      }))
+      .sort((a, b) => a.startsAt - b.startsAt);
+  }
+
   /** The location every reservation belongs to. One lodge, one location. */
   async locationId() {
     if (this.location) return this.location;

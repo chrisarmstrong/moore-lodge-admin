@@ -60,6 +60,12 @@
  * @typedef {object} BookingsRepository
  * @property {(range: {start: Date, end: Date}) => Promise<Booking[]>} inRange
  * @property {(draft: BookingDraft) => Promise<Booking>} create
+ * @property {(range: {start: Date, end: Date, experienceId: ?string}) => Promise<Slot[]>} scheduledSlots
+ *
+ * @typedef {object} Slot
+ * @property {Date}     startsAt
+ * @property {?number}  minutes
+ * @property {boolean}  full      No room at all — shown, never blocked on.
  *
  * @typedef {object} BookingDraft
  * @property {Date}    startsAt

@@ -250,5 +250,59 @@ is('it does not offer to take a payment', offHtml.includes('/paid'), false);
 is('the day points at it', dayHtml.includes('/called-off/2026-08-06'), true);
 is('the chase list is not where they went', chaseHtml.includes('Called Off'), false);
 
+console.log('--- the form offers what runs, not what happened to be booked ---');
+{
+  const { newBody } = await import('../src/views/new.js');
+  const tea = { id: TEA, name: 'Afternoon Tea', seatsPerSitting: 15, visible: true };
+  const slot = (iso, full = false) => ({ startsAt: new Date(iso), minutes: 120, full });
+
+  // The 12:30 has bookings; the 14:30 is scheduled and empty. A form built from
+  // the diary could not show the second one at all.
+  const html = newBody({
+    date: '2026-08-06', today: '2026-08-06', experiences: [tea], experience: tea,
+    slots: [slot('2026-08-06T11:30:00Z'), slot('2026-08-06T13:30:00Z')],
+    running: new Set(['2026-08-06']),
+    sittings: grouped.get('2026-08-06') || [],
+  });
+  is('a scheduled sitting nobody has booked is still offered', html.includes('14:30'), true);
+  // "14:30" appears twice in the chip — the radio value and the visible time —
+  // so match the chip block rather than splitting on it.
+  const chipFor = (page, time) => (page.match(
+    new RegExp(`<label class="chip wide[^"]*">\\s*<input[^>]*value="${time}\\|[^"]*"[^>]*>([\\s\\S]*?)</label>`),
+  ) || [])[1] || '';
+  is('and offered as the experience, not a bare table', chipFor(html, '14:30').includes('Afternoon Tea'), true);
+  is('with the seats the experience allows', chipFor(html, '14:30').includes('15 left'), true);
+  is('a sitting with bookings says what is left', /\d+ left/.test(html), true);
+
+  // A day the experience does not run is marked, not hidden and not disabled.
+  const shut = newBody({
+    date: '2026-08-07', today: '2026-08-06', experiences: [tea], experience: tea,
+    slots: [], running: new Set(['2026-08-06']),
+    sittings: [],
+  });
+  is('a day it does not run says so', shut.includes('does not run this day'), true);
+  is('but is still bookable if somebody decides to open', shut.includes('book anyway'), true);
+  is('and the chip is still a link', /class="chip[^"]*shut[^"]*" href/.test(shut), true);
+
+  // Option B: capacity informs, it never blocks.
+  const packed = newBody({
+    date: '2026-08-06', today: '2026-08-06', experiences: [tea], experience: tea,
+    slots: [slot('2026-08-06T11:30:00Z', true)], running: new Set(['2026-08-06']),
+    sittings: grouped.get('2026-08-06') || [],
+  });
+  is('a full sitting says Full', packed.includes('Full'), true);
+  is('and is still selectable', /value="12:30\|[^"]*"(?![^>]*disabled)/.test(packed), true);
+  is('nothing on the form is disabled', packed.includes('disabled'), false);
+
+  // One experience is not a choice worth asking somebody to make.
+  is('no experience chips when there is only one', html.includes('What for</p>'), false);
+  const two = newBody({
+    date: '2026-08-06', today: '2026-08-06', experiences: [tea, { id:'x', name:'Chef\u2019s Table', visible:true }],
+    experience: tea, slots: [], running: new Set(), sittings: [],
+  });
+  is('and chips the moment there are two', two.includes('Chef\u2019s Table'), true);
+  is('carried through the date links', two.includes(`/new/2026-08-06?experience=${TEA}`), true);
+}
+
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);

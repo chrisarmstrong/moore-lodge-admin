@@ -9,11 +9,11 @@
  */
 
 import { escape } from './layout.js';
-import { dateLabel, shiftDate, localDate } from '../time.js';
+import { dateLabel, shiftDate, localDate, localTime } from '../time.js';
 import { MAX_PARTY, OTHER } from '../draft.js';
 
 /** How many days of chips before somebody has to open the date picker. */
-const NEAR_DAYS = 7;
+export const NEAR_DAYS = 7;
 
 /** Enough to be one row on a phone. Seven and up is a hen party, and typed. */
 const COMMON_PARTIES = [1, 2, 3, 4, 5, 6];
@@ -31,7 +31,10 @@ export function newShell({ date }) {
   return { title: 'New booking', heading: 'New booking', titlebar, nav: '' };
 }
 
-export function newBody({ date, experiences, sittings = [], values = {}, errors = [], today = null }) {
+export function newBody({
+  date, experiences, experience = null, slots = [], running = null,
+  sittings = [], values = {}, errors = [], today = null,
+}) {
   const value = (name, fallback = '') => escape(values[name] ?? fallback);
   const now = today || localDate();
 
@@ -44,11 +47,12 @@ export function newBody({ date, experiences, sittings = [], values = {}, errors 
   // and a form inside a form is invalid, which the parser resolves by closing
   // the outer one early and putting the rest of the booking outside it.
   return `${problems}
-  ${whenChips({ date, now })}
+  ${experienceChips({ experiences, experience, date })}
+  ${whenChips({ date, now, running, experience })}
   <form class="book" method="post" action="/new">
     <input type="hidden" name="date" value="${value('date', date)}">
 
-    ${sittingChips({ sittings, experiences, values })}
+    ${sittingChips({ slots, sittings, experiences, experience, values })}
     ${partyChips({ values })}
 
     <p class="field"><label for="name">Name</label>
@@ -87,16 +91,43 @@ export function newBody({ date, experiences, sittings = [], values = {}, errors 
  * reload. The cost is that changing the date after typing loses the typing,
  * which is why the date is the first thing on the page.
  */
-function whenChips({ date, now }) {
+/**
+ * Which experience is being sold.
+ *
+ * Absent entirely when the lodge runs one, because choosing from a list of one
+ * is a decision nobody should be asked to make. It appears the day a second is
+ * added, and until then the single experience is simply what a booking is for.
+ */
+function experienceChips({ experiences, experience, date }) {
+  if (experiences.length < 2) return '';
+
+  const chips = experiences.map((each) => `<a class="chip${each.id === (experience && experience.id) ? ' on' : ''}"
+    href="/new/${date}?experience=${encodeURIComponent(each.id)}">${escape(each.name)}</a>`).join('');
+
+  return `<section class="chips when" aria-label="What for">
+    <p class="legend">What for</p>
+    <div class="chiprow">${chips}</div>
+  </section>`;
+}
+
+function whenChips({ date, now, running, experience }) {
   const days = Array.from({ length: NEAR_DAYS }, (_, step) => shiftDate(now, step));
   const listed = days.includes(date) ? days : [date, ...days.slice(0, NEAR_DAYS - 1)].sort();
+
+  const carried = experience ? `?experience=${encodeURIComponent(experience.id)}` : '';
+  const what = experience ? experience.name : 'The lodge';
 
   const chips = listed.map((each) => {
     const label = each === now ? 'Today'
       : each === shiftDate(now, 1) ? 'Tomorrow'
         : shortDay(each);
-    return `<a class="chip${each === date ? ' on' : ''}" href="/new/${each}"
-      ${each === date ? 'aria-current="true"' : ''}>${escape(label)}</a>`;
+    // Marked, never disabled. "We don't do tea on a Tuesday" is something to be
+    // able to say from the screen, and a day off is still a day somebody may
+    // decide to open — that call is theirs, not the form's.
+    const shut = running && !running.has(each);
+    return `<a class="chip${each === date ? ' on' : ''}${shut ? ' shut' : ''}" href="/new/${each}${carried}"
+      ${each === date ? 'aria-current="true"' : ''}
+      ${shut ? `title="${escape(what)} does not run this day"` : ''}>${escape(label)}</a>`;
   }).join('');
 
   return `<section class="chips when" aria-label="When">
@@ -110,7 +141,8 @@ function whenChips({ date, now }) {
         </form>
       </details>
     </div>
-    <p class="chosen">${escape(dateLabel(date))}</p>
+    <p class="chosen">${escape(dateLabel(date))}${running && !running.has(date)
+    ? ` &middot; <b>${escape(what)} does not run this day</b>` : ''}</p>
   </section>`;
 }
 
@@ -122,29 +154,48 @@ function whenChips({ date, now }) {
  * that cannot take the party is still shown — the answer to "is there anything
  * at half twelve" is yes-but-full, not silence.
  */
-function sittingChips({ sittings, experiences, values }) {
-  const chosen = values.sitting || (sittings.length ? sittingValue(sittings[0]) : OTHER);
+function sittingChips({ slots, sittings, experiences, experience, values }) {
+  // The schedule says which sittings exist; the diary only says how full they
+  // are. Reading it the other way round — which is what this did — makes a day
+  // nobody has booked yet look like a day nothing runs.
+  const booked = new Map(sittings.map((sitting) => [localTime(sitting.startsAt), sitting]));
 
-  const chips = sittings.map((sitting) => {
-    const left = sitting.capacity == null ? null : sitting.capacity - sitting.covers;
-    const room = left == null ? '' : left <= 0 ? 'Full' : `${left} left`;
-    const value = sittingValue(sitting);
+  const offered = slots.map((slot) => {
+    const time = localTime(slot.startsAt);
+    const sitting = booked.get(time) || null;
+    const capacity = sitting ? sitting.capacity : (experience ? experience.seatsPerSitting : null);
+    const covers = sitting ? sitting.covers : 0;
+    const left = capacity == null ? null : capacity - covers;
 
-    return `<label class="chip wide${left != null && left <= 0 ? ' spent' : ''}">
-      <input type="radio" name="sitting" value="${escape(value)}" ${chosen === value ? 'checked' : ''}>
-      <span class="chiptime">${escape(sitting.time)}</span>
-      <span class="chipwhat">${escape(sitting.experience ? sitting.experience.name : 'A table')}</span>
-      ${room ? `<span class="chipleft">${escape(room)}</span>` : ''}
-    </label>`;
-  }).join('');
+    return {
+      time,
+      value: `${time}|${experience ? experience.id : ''}`,
+      name: experience ? experience.name : 'A table',
+      room: slot.full || (left != null && left <= 0) ? 'Full'
+        : left == null ? '' : `${left} left`,
+      spent: slot.full || (left != null && left <= 0),
+    };
+  });
 
-  const options = experiences.map((experience) => `<option value="${escape(experience.id)}"
-    ${values.experienceId === experience.id ? 'selected' : ''}>${escape(experience.name)}</option>`).join('');
+  const chosen = values.sitting || (offered.length ? offered[0].value : OTHER);
 
+  const chips = offered.map((slot) => `<label class="chip wide${slot.spent ? ' spent' : ''}">
+    <input type="radio" name="sitting" value="${escape(slot.value)}" ${chosen === slot.value ? 'checked' : ''}>
+    <span class="chiptime">${escape(slot.time)}</span>
+    <span class="chipwhat">${escape(slot.name)}</span>
+    ${slot.room ? `<span class="chipleft">${escape(slot.room)}</span>` : ''}
+  </label>`).join('');
+
+  const options = experiences.map((each) => `<option value="${escape(each.id)}"
+    ${values.experienceId === each.id ? 'selected' : ''}>${escape(each.name)}</option>`).join('');
+
+  // "Full" is a fact, not a refusal. Somebody on the phone can decide to seat
+  // eleven at a table for ten, and the form's job is to tell them what they are
+  // deciding rather than to decide it.
   return `<fieldset class="chips">
     <legend>Sitting</legend>
-    ${chips || '<p class="chosen">Nothing booked that day yet — set a time below.</p>'}
-    <label class="chip ${sittings.length ? '' : 'only'}">
+    ${chips || `<p class="chosen">Nothing runs that day — set a time below to book anyway.</p>`}
+    <label class="chip ${offered.length ? '' : 'only'}">
       <input type="radio" name="sitting" value="${OTHER}" ${chosen === OTHER ? 'checked' : ''}>
       <span>Another time</span>
     </label>
@@ -183,8 +234,6 @@ function partyChips({ values }) {
         min="1" max="${MAX_PARTY}" value="${escape(values.partySize || '')}"></p>
   </fieldset>`;
 }
-
-const sittingValue = (sitting) => `${sitting.time}|${sitting.experience ? sitting.experience.id : ''}`;
 
 /** "Sat 15" — enough to pick a day out of a row without reading a date. */
 function shortDay(iso) {
