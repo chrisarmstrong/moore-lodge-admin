@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/time.test.mjs && node test/draft.test.mjs && node test/adapter.test.mjs && node test/access.test.mjs && node test/actions.test.mjs && node test/worker.test.mjs",
+    "test": "node test/time.test.mjs && node test/draft.test.mjs && node test/adapter.test.mjs && node test/rooms.test.mjs && node test/access.test.mjs && node test/actions.test.mjs && node test/worker.test.mjs",
     "test:mobile": "node test/pwa.test.mjs && node test/access-cache.test.mjs && node test/update.test.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"

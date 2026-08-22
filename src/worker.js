@@ -11,7 +11,8 @@
 
 import { authenticate, AccessError } from './access.js';
 import { WixBookings } from './adapters/wix-bookings.js';
-import { groupIntoSittings, monthGrid, monthSummary } from './calendar.js';
+import { FreetobookRooms } from './adapters/freetobook-rooms.js';
+import { groupIntoSittings, monthGrid, monthSummary, roomsSummary } from './calendar.js';
 import { monthShell, monthBody } from './views/month.js';
 import { dayShell, dayBody } from './views/day.js';
 import { listShell, listBody, KINDS } from './views/list.js';
@@ -20,7 +21,8 @@ import { readDraft } from './draft.js';
 import { page, pageHead, pageTail, skeleton, RETIRE_SKELETON, escape } from './views/layout.js';
 import { ACTIONS, permits } from './actions.js';
 import {
-  localDate, localMonth, monthWindow, dayWindow, shiftDate, isValidMonth, isValidDate,
+  localDate, localMonth, monthWindow, dayWindow, shiftDate, datesInMonth,
+  isValidMonth, isValidDate,
 } from './time.js';
 import { NEAR_DAYS } from './views/new.js';
 
@@ -218,10 +220,13 @@ async function route(url, env, staff, ctx) {
     if (!isValidMonth(month)) return badRequest('That is not a month.');
     const today = localDate();
     return stream({ ...monthShell({ month, today }), version: buildVersion(env), flash }, 'month', async () => {
-      const { sittingsByDate } = await diary(bookings, monthWindow(month));
+      const [{ sittingsByDate }, roomsByDate] = await Promise.all([
+        diary(bookings, monthWindow(month)),
+        upstairs(env, ctx, month),
+      ]);
       return monthBody({
-        month, weeks: monthGrid(month, sittingsByDate),
-        summary: monthSummary(sittingsByDate), today,
+        month, weeks: monthGrid(month, sittingsByDate, roomsByDate),
+        summary: monthSummary(sittingsByDate), rooms: roomsSummary(roomsByDate), today,
       });
     });
   }
@@ -236,10 +241,14 @@ async function route(url, env, staff, ctx) {
     // serves both columns rather than the phone paying for a second one.
     const month = localMonth(new Date(`${date}T12:00:00Z`));
     return stream({ ...dayShell({ date }), version: buildVersion(env), flash }, 'day', async () => {
-      const { sittingsByDate } = await diary(bookings, monthWindow(month));
+      const [{ sittingsByDate }, roomsByDate] = await Promise.all([
+        diary(bookings, monthWindow(month)),
+        upstairs(env, ctx, month),
+      ]);
       return dayBody({
         date,
         sittings: sittingsByDate.get(date) || [],
+        rooms: roomsByDate?.get(date) || null,
         weeks: monthGrid(month, sittingsByDate),
         month,
         today: localDate(),
@@ -294,6 +303,29 @@ async function route(url, env, staff, ctx) {
   }
 
   return notFound();
+}
+
+/**
+ * The rooms, alongside the diary rather than in front of it.
+ *
+ * Two things matter here. It is a whole month even when one day is being read,
+ * because the month view asks freetobook the same question and both then answer
+ * off one cached copy at the edge — a day reached from its month costs nothing.
+ *
+ * And it never throws. Samson is the dining diary first; freetobook being down,
+ * slow or newly rearranged must cost the room strip and not the page. The views
+ * are given null and say plainly that they were not told, which is the one
+ * thing that must not be confused with an empty house.
+ */
+async function upstairs(env, ctx, month) {
+  const dates = datesInMonth(month);
+  try {
+    return await new FreetobookRooms(env, ctx)
+      .inRange({ from: dates[0], to: dates[dates.length - 1] });
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
 }
 
 async function diary(bookings, window) {

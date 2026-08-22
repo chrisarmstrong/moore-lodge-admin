@@ -13,8 +13,8 @@ never take the other down.
 | Route | Shows |
 |---|---|
 | `/` | Redirects to the current month |
-| `/calendar/YYYY-MM` | Month grid — sittings per day, covers against capacity |
-| `/day/YYYY-MM-DD` | A day's sittings, with guests, contact details and dietary notes |
+| `/calendar/YYYY-MM` | Month grid — sittings per day, covers against capacity, rooms let per night |
+| `/day/YYYY-MM-DD` | A day's sittings, with guests, contact details and dietary notes — and which rooms are occupied, arriving or to be turned round |
 | `/settle/PERIOD` | Who still owes money, for a day or a month |
 | `/chase/PERIOD` | Who abandoned a booking and left a way to reach them |
 | `/called-off/PERIOD` | Cancellations and no shows, each with a way back |
@@ -27,18 +27,80 @@ never take the other down.
 ## The seam
 
 `src/domain.js` defines Samson's own vocabulary — `Booking`, `Sitting`,
-`Experience` — and the repository interface the rest of the app talks to.
-`src/adapters/wix-bookings.js` is the only file that knows Wix exists.
+`Experience` for the dining room, `Room` and `RoomDay` for upstairs — and the
+repository interfaces the rest of the app talks to. `src/adapters/` holds the
+only two files that know where any of it came from.
 
 That boundary is the whole point. A Wix response shape must never reach a
 template. Hold that line and moving onto our own database later is a change of
 adapter, made one entity at a time and reversible if something surprises us.
 Let it slip and this becomes a Wix-shaped dashboard that has to be written twice.
 
+The rooms are what that boundary was for. They arrived as a second source with
+nothing in common with the first, and no view had to learn a thing about
+freetobook to show them.
+
 ```
-views ──▶ domain types ──▶ BookingsRepository ──┬─▶ WixBookings    (today)
-                                                └─▶ LodgeBookings  (later: D1 + Stripe)
+views ──▶ domain types ──┬─▶ BookingsRepository ──┬─▶ WixBookings      (today)
+                         │                        └─▶ LodgeBookings    (later: D1 + Stripe)
+                         └─▶ RoomsRepository ─────┬─▶ FreetobookRooms  (today: availability)
+                                                  └─▶ FreetobookStays  (later: named guests)
 ```
+
+## The rooms
+
+The month grid carries a bed count per night and the day page lists what is
+happening to each room — arriving, staying, departed this morning. It comes from
+freetobook's public availability feed, the same one `moorelodge.co.uk` prices a
+stay from, proxied in `src/freetobook.js` and mapped in
+`src/adapters/freetobook-rooms.js`.
+
+**It is occupancy, not bookings.** The feed says a room is taken. It does not
+say by whom, for how long, or when they are expected. That is enough for
+housekeeping to know a bed is being slept in, and it is the whole of what the
+screen claims — the page says so itself, at the bottom of the room list, because
+somebody planning a morning off it needs to know where it stops.
+
+Three limits are worth knowing, and all three are the feed's, not the code's:
+
+- **Back-to-back stays read as one.** One party out and another in on the same
+  day looks identical to a two-night stay, so that changeover is not shown.
+  Rooms that go empty are always right; rooms that turn round are not always
+  visible.
+- **A cancellation just reappears as free.** Nothing marks it as having gone.
+- **It only answers for today onwards.** Ask for a night that has passed and
+  freetobook does not say no — it answers `200` with a couple of unrelated
+  dates, which is far worse than an error because it looks like an answer.
+  `inRange` therefore clamps to today and reports only the nights it genuinely
+  knows; a night it was not told about renders as nothing at all rather than as
+  an empty house. A past month's grid carries no bed counts, and says `—`.
+
+The clamp costs one thing: today has no night before it to compare against, so
+this morning's changeovers cannot be seen and an arrival cannot be told from a
+stay in progress. Today's occupied rooms therefore read "In use", and the page
+says why. Every other date in the range has its predecessor and is exact.
+
+**Exclusive use is spread back over the bedrooms.** freetobook sells the whole
+house as a unit of its own and books it without touching the eight bedrooms, so
+a house full of one wedding party would otherwise read as eight empty rooms —
+the one misreading of this feed that could send nobody upstairs at all. A booked
+exclusive-use night marks every bedroom let, and the day page says which it is.
+
+**freetobook is never allowed to take the diary down.** The rooms are fetched
+alongside Wix, not in front of it, and a failure is caught in `upstairs()` and
+turned into a null the views know how to say out loud. Nothing about a
+freetobook outage should cost anybody a booking.
+
+Named guests need freetobook's private per-booking feed, which is a paid option
+on their account and a different adapter behind the same `RoomsRepository`
+interface. Nothing in the views would change.
+
+### freetobook credentials
+
+Widget ID `50366`, property `55682`. The widget token in `src/freetobook.js` is
+not a secret — it appears in every "Book Now" link on the public site and in
+freetobook's own client bundle. `FREETOBOOK_WIDGET_TOKEN` overrides it, so a
+rotated token is a config change rather than a deploy.
 
 ## Running it
 
@@ -49,9 +111,10 @@ npm run dev
 npm test
 ```
 
-`npm test` needs no credentials. It covers the date logic, the adapter against a
-stubbed transport, and the Access verification against a generated RSA keypair —
-real signatures, and every way a request should be turned away.
+`npm test` needs no credentials. It covers the date logic, both adapters against
+stubbed transports, and the Access verification against a generated RSA keypair
+— real signatures, and every way a request should be turned away. The rooms
+tests pin "today" so the clamp on past nights is exercised rather than dodged.
 
 `node tools/card.mjs` redraws the link preview card. It needs the same browser
 `test:mobile` does.
@@ -87,6 +150,12 @@ skeleton. Waiting for Wix before sending a byte left the previous screen frozen
 with nothing to show for it. The consequence is that the status line is gone by
 the time the body is built, so a failure after the flush is reported inside the
 page rather than as a 502.
+
+**The rooms come from the month, whichever page asked.** A day page fetches the
+whole month from freetobook even though it shows one night of it, because the
+month view asks the identical question — so both answer off one copy in the edge
+cache, and a day reached from its month costs nothing. It is two calls either
+way: the unit list, cached an hour, and the nights, cached five minutes.
 
 **Wix queries are POSTs, so `cf: { cacheTtl }` does nothing.** Cloudflare does
 not cache POST responses, and the TTLs that used to sit on those calls were
@@ -506,7 +575,9 @@ a real form post.
 
 ## Things learned from the live API
 
-Worth knowing before extending the adapter — each of these cost a round trip.
+Worth knowing before extending either adapter — each of these cost a round trip.
+
+### Wix
 
 **Ranges need `$and`.** `{"details.startDate": {"$gte": a, "$lt": b}}` is
 rejected with "unsupported operator": the parser reads the whole object as the
@@ -528,6 +599,34 @@ map.
 
 **Not every booking has a guest.** `HELD` reservations carry no `reservee` at
 all, and custom fields are often present but empty.
+
+### freetobook
+
+**A past `from_date` is answered, not refused.** Ask for a range starting before
+today and the call returns `200` with two or three dates that bear no relation
+to what was asked for — the same two, whatever range you send. There is nothing
+downstream that could tell that from a real answer, which is why the clamp lives
+in `inRange` and not in a view.
+
+**A month at a time is fine.** `from_date`/`to_date` spanning forty nights comes
+back in one response of about 80KB, so there is no paging to do and no reason to
+fetch a day at a time.
+
+**Occupancy hangs off `pseudoUnitAvailabilities`, not the unit.** `allocation`
+and `isClosedOut` describe what is for sale; `isBooked` on the pseudo-unit is
+what says somebody is in it. Every unit here has an allocation of one, so it
+reads as a boolean — but it is counted rather than tested, because a unit sold
+as several identical rooms would otherwise report one bed made when four were
+slept in.
+
+**Its WAF wants a browser-shaped User-Agent** and Workers send none by default,
+so an unadorned `fetch` gets a 403. The same lesson as the public site's
+`worker.js`, and the same `Mozilla/5.0 (compatible; MooreLodge/1.0; …)` answer.
+
+**`cf: { cacheEverything }` fails where the Cache API works.** With it set the
+origin request is made by Cloudflare's caching layer rather than by the Worker,
+and the WAF answers 403 — in production only. `src/freetobook.js` makes the
+request itself and caches the response afterwards.
 
 ## Time
 

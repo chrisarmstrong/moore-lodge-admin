@@ -1,12 +1,12 @@
 // Renders every page from the fixture to standalone HTML, for eyeballing.
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { WixBookings } from '../src/adapters/wix-bookings.js';
-import { groupIntoSittings, monthGrid, monthSummary } from '../src/calendar.js';
+import { groupIntoSittings, monthGrid, monthSummary, roomsSummary } from '../src/calendar.js';
 import { monthShell, monthBody } from '../src/views/month.js';
 import { dayShell, dayBody } from '../src/views/day.js';
 import { listShell, listBody } from '../src/views/list.js';
 import { pageHead, pageTail } from '../src/views/layout.js';
-import { RESERVATIONS, EXPERIENCES, LOCATIONS } from './fixture.mjs';
+import { RESERVATIONS, EXPERIENCES, LOCATIONS, ROOM_NIGHTS } from './fixture.mjs';
 
 const out = process.argv[2];
 mkdirSync(out, { recursive: true });
@@ -30,6 +30,7 @@ const [reservations, experiences] = await Promise.all([
   repo.experiences(),
 ]);
 const byDate = groupIntoSittings(reservations, experiences);
+const roomsByDate = ROOM_NIGHTS(month);
 const daySittings = byDate.get(today) || [];
 const all = [...byDate.values()].flat().sort((a, b) => a.startsAt - b.startsAt);
 
@@ -37,12 +38,21 @@ const write = (name, shell, body) =>
   writeFileSync(`${out}/${name}.html`, pageHead({ ...shell, version: 'dev' }) + body + pageTail());
 
 write('month', monthShell({ month, today }),
-  monthBody({ month, weeks: monthGrid(month, byDate), summary: monthSummary(byDate), today }));
+  monthBody({ month, weeks: monthGrid(month, byDate, roomsByDate),
+    summary: monthSummary(byDate), rooms: roomsSummary(roomsByDate), today }));
 write('day', dayShell({ date: today }),
   dayBody({
     date: today, sittings: daySittings, back: `/day/${today}`,
-    weeks: monthGrid(month, byDate), month, today,
+    rooms: roomsByDate.get(today), weeks: monthGrid(month, byDate, roomsByDate), month, today,
   }));
+// The two screens that are only about upstairs: a changeover morning, and the
+// night the whole house goes out as one.
+write('day-changeover', dayShell({ date: '2026-08-13' }),
+  dayBody({ date: '2026-08-13', sittings: [], rooms: roomsByDate.get('2026-08-13'),
+    weeks: monthGrid(month, byDate, roomsByDate), month: '2026-08', today }));
+write('day-wholehouse', dayShell({ date: '2026-08-21' }),
+  dayBody({ date: '2026-08-21', sittings: [], rooms: roomsByDate.get('2026-08-21'),
+    weeks: monthGrid(month, byDate, roomsByDate), month: '2026-08', today }));
 write('settle', listShell({ kind: 'settle', period: today }),
   listBody({ kind: 'settle', period: today, sittings: daySittings, back: `/settle/${today}` }));
 write('settle-month', listShell({ kind: 'settle', period: month }),

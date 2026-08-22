@@ -122,7 +122,7 @@ ${flash ? `<p class="flash${flash.ok ? '' : ' bad'}" role="status">${escape(flas
 
 export function pageTail() {
   return `</main>
-<footer class="foot"><p>Reading live from Wix. Nothing here writes back — yet.</p></footer>
+<footer class="foot"><p>Dining live from Wix, rooms from freetobook.</p></footer>
 <script>${SCRIPT}</script>
 </body>
 </html>`;
@@ -142,6 +142,18 @@ export function skeleton(kind) {
 }
 
 /** Emitted just before the real content, which retires the skeleton. */
+/**
+ * A bed, drawn small.
+ *
+ * At 10px there is no room for a word, and "3" on its own in the corner of a
+ * cell that already carries a date is just a second number to misread. The
+ * outline is stroked rather than filled so it stays legible against both the
+ * cream and the near-black, and it inherits `currentColor` so a badge that
+ * changes colour takes the bed with it.
+ */
+export const BED = '<svg class="bedicon" viewBox="0 0 16 11" aria-hidden="true" focusable="false">'
+  + '<path d="M1.6 2.2v7.2M1.6 6.2h12.8v3.2M14.4 9.4V6.2a2 2 0 0 0-2-2H8.4v2"/></svg>';
+
 export const RETIRE_SKELETON = '<style>#sk{display:none}</style>';
 
 const SCRIPT = `
@@ -545,6 +557,73 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   .cell .n{align-self:flex-start}
   .pill{display:none}
   .compact{display:flex;width:100%;padding:0 .1rem}
+}
+
+/* ---- rooms ------------------------------------------------------------- */
+
+/* The bed count lives out of the flow in the corner of the cell. In flow it
+   cost a line of height, and at 45px a month cell has none to give — the phone
+   layout is a date, a circle, and that is the lot. It sits under the invisible
+   .open anchor that covers the cell, which is only a problem if it wants a tap,
+   and it does not: the day it belongs to is the tap. */
+.beds{
+  position:absolute;top:.3rem;right:.35rem;z-index:1;
+  display:inline-flex;align-items:center;gap:.15rem;
+  padding:.05rem .28rem .05rem .22rem;border-radius:999px;
+  background:var(--sunk);border:1px solid var(--rule);color:var(--muted);
+  font-size:.64rem;line-height:1.5;font-variant-numeric:tabular-nums;
+}
+/* The whole house is not eight bookings, it is one — and it is the night the
+   diary most needs to shout about, so it is the one that fills in. */
+.beds.whole{background:var(--accent);border-color:var(--accent);color:var(--ground)}
+.bedicon{width:.72rem;height:.5rem;fill:none;stroke:currentColor;stroke-width:1.5;
+  stroke-linecap:round;stroke-linejoin:round}
+/* Seven columns on a 375px screen leave a cell about 48px wide. The date takes
+   15 of them and the badge, bed and all, wants 30 — which is how a two-digit
+   date ended up underneath the bed. The bed is the part that can go: the count
+   is the fact, and the outlined pill in the corner is already nothing like the
+   bare date opposite it or the filled circle underneath. */
+@media(max-width:560px){
+  .beds{top:.28rem;right:.28rem;padding:.05rem .24rem;font-size:.62rem}
+  .cell .bedicon{display:none}
+}
+/* Drawn at badge size it disappeared beside a sentence. */
+.wholehouse .bedicon{width:1.05rem;height:.75rem;flex:none}
+
+.rooms{border:1px solid var(--rule);background:var(--surface);margin-bottom:1.5rem}
+.rooms > h2{
+  margin:0;padding:.85rem 1rem;border-bottom:1px solid var(--rule);
+  font-family:var(--display);font-weight:300;font-size:1.15rem;
+  display:flex;justify-content:space-between;align-items:baseline;gap:1rem;
+}
+.rooms > h2 .count{font-family:var(--body);font-size:.78rem;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+/* The house going out as one is the sentence, not a chip on eight rows. */
+.wholehouse{
+  display:flex;align-items:center;gap:.55rem;margin:0;
+  padding:.6rem 1rem;border-bottom:1px solid var(--rule);
+  background:var(--sunk);font-size:.85rem;
+}
+.roomrow{
+  display:flex;align-items:center;justify-content:space-between;gap:.75rem;
+  padding:.7rem 1rem;border-bottom:1px solid var(--rule);min-height:var(--tap);
+}
+.roomrow:last-of-type{border-bottom:0}
+.rname{font-size:.95rem}
+.rname .rgroup{display:block;font-size:.7rem;color:var(--muted);margin-top:.1rem}
+/* Departed is the row somebody has to act on this morning, so it is the row
+   that carries the weight. Staying is the row that must not be stripped, and
+   it deliberately looks like nothing at all. */
+.rtag{font-size:.72rem;padding:.15rem .5rem;border:1px solid var(--rule);
+  border-radius:2px;color:var(--muted);white-space:nowrap}
+.rtag.arriving{color:var(--accent);border-color:var(--accent)}
+.rtag.departed{color:var(--warn);border-color:var(--warn);background:var(--warn-wash)}
+.rtag.blocked{border-style:dashed}
+/* Where the numbers come from, and what they cannot see. Small, permanent, and
+   not a warning — it is a property of the feed, not a fault. */
+.fineprint{
+  margin:0;padding:.6rem 1rem;border-top:1px solid var(--rule);
+  font-size:.72rem;line-height:1.45;color:var(--muted);
 }
 
 .sitting{border:1px solid var(--rule);background:var(--surface);margin-bottom:1rem}

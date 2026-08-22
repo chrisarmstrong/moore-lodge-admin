@@ -1,4 +1,4 @@
-import { escape } from './layout.js';
+import { escape, BED } from './layout.js';
 import { monthLabel, shiftMonth, localMonth, WEEKDAY_INITIALS } from '../time.js';
 
 /** The part of the month page that needs no data — flushed while Wix answers. */
@@ -25,13 +25,14 @@ export function monthShell({ month, today }) {
 }
 
 /** The part that waits on the diary. */
-export function monthBody({ month, weeks, summary, today }) {
+export function monthBody({ month, weeks, summary, rooms = null, today }) {
   const stats = `<div class="stats">
     <div class="stat"><b>${summary.covers}</b><span>Guests booked</span></div>
     <div class="stat"><b>${summary.occupancy == null ? '—' : `${summary.occupancy}%`}</b><span>Of seats offered</span></div>
     ${tile(`/chase/${month}`, summary.abandoned, withGuests('Abandoned', summary.abandonedGuests), true)}
     ${tile(`/settle/${month}`, summary.toSettle, withGuests('Groups to settle', summary.toSettleGuests), false)}
     ${tile(`/called-off/${month}`, summary.offDiary, withGuests('Called off', summary.offDiaryGuests), false)}
+    ${roomsTile(rooms, month)}
   </div>`;
 
   const header = WEEKDAY_INITIALS.map((initial) => `<div class="dow">${initial}</div>`).join('');
@@ -69,8 +70,9 @@ export function monthBody({ month, weeks, summary, today }) {
 
     return `<div class="${classes.join(' ')}">
       <span class="n">${cell.day}</span>
+      ${beds(cell.rooms)}
       ${pills}${compact}
-      <a class="open" href="/day/${cell.date}" aria-label="${escape(cell.date)}${cell.covers ? `, ${cell.covers} guests` : ', nothing booked'}"></a>
+      <a class="open" href="/day/${cell.date}" aria-label="${escape(cell.date)}${cell.covers ? `, ${cell.covers} guests` : ', nothing booked'}${roomsSaid(cell.rooms)}"></a>
     </div>`;
   }).join('');
 
@@ -78,6 +80,57 @@ export function monthBody({ month, weeks, summary, today }) {
   <div class="grid">${header}${cells}</div>
   ${summary.sittings === 0 ? '<p class="empty">No bookings this month.</p>' : ''}`;
 }
+
+/**
+ * How many rooms are being slept in, tucked into the corner of the cell.
+ *
+ * It is a badge rather than another pill because the pills are the diary and
+ * this is not — and because on a phone the cell has room for one date, one
+ * circle and nothing else. Positioned out of the flow, it costs no height at
+ * either size, which is the only way it fits a 45px column.
+ *
+ * A night with nobody upstairs shows nothing at all. The absence is the number.
+ */
+function beds(rooms) {
+  if (!rooms || rooms.occupied === 0) return '';
+  const label = rooms.wholeHouse ? 'whole house' : `${rooms.occupied} of ${rooms.lettable} rooms let`;
+  return `<span class="beds${rooms.wholeHouse ? ' whole' : ''}" title="${escape(label)}">${BED}${rooms.occupied}</span>`;
+}
+
+/** The same fact, for whoever is hearing the cell rather than seeing it. */
+function roomsSaid(rooms) {
+  if (!rooms || rooms.occupied === 0) return '';
+  if (rooms.wholeHouse) return ', whole house booked';
+  return `, ${rooms.occupied} ${rooms.occupied === 1 ? 'room' : 'rooms'} let`;
+}
+
+/**
+ * The month upstairs, in one figure.
+ *
+ * A dash rather than a zero when freetobook has not answered: an empty house
+ * and an unanswered question look nothing alike to anybody planning a week.
+ *
+ * The label stays to one line. It shared a row with five other tiles and every
+ * clause that earned its place there — the percentage, and the date the count
+ * really starts from — costs the tile beside it a wrap. Whole-house nights are
+ * left out because the grid already fills those cells in.
+ */
+function roomsTile(rooms, month) {
+  if (!rooms) return `<div class="stat quiet"><b>&mdash;</b><span>Room nights let</span></div>`;
+  const share = rooms.occupancy == null ? '' : ` &middot; ${rooms.occupancy}%`;
+  // Said out loud when the count does not cover the whole month, which it never
+  // does for the month in progress: freetobook will not look backwards, so the
+  // nights already gone are missing rather than empty.
+  const span = rooms.from && rooms.from !== `${month}-01`
+    ? ` &middot; from ${Number(rooms.from.slice(8))} ${MONTH_SHORT[Number(month.slice(5, 7)) - 1]}`
+    : '';
+  return `<div class="stat${rooms.roomNights ? '' : ' quiet'}">
+    <b>${rooms.roomNights}</b><span>Room nights let${share}${span}</span>
+  </div>`;
+}
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
  * The tile's number is a count of groups; the label names the unit and adds the

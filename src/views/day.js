@@ -1,6 +1,9 @@
-import { escape } from './layout.js';
+import { escape, BED } from './layout.js';
 import { dateLabel, shiftDate, localDate, localMonth, WEEKDAY_INITIALS } from '../time.js';
-import { statusLabel, paymentLabel, PAYMENT, STATUS, DISPOSITION } from '../domain.js';
+import {
+  statusLabel, paymentLabel, roomStateLabel, needsAttention, isLet,
+  PAYMENT, STATUS, DISPOSITION, ROOM,
+} from '../domain.js';
 import { availableFor, permits, NOTE_LIMIT } from '../actions.js';
 
 /** The part of the day page that needs no data — flushed while Wix answers. */
@@ -30,12 +33,13 @@ export function dayShell({ date }) {
   return { title: dateLabel(date), heading: dateLabel(date), titlebar, nav, wide: true, split: true, add: date };
 }
 
-export function dayBody({ date, sittings, weeks = null, month = null, today = null, back = `/day/${date}` }) {
+export function dayBody({ date, sittings, rooms = null, weeks = null, month = null, today = null, back = `/day/${date}` }) {
   // Siblings of the titlebar rather than wrapped in it: `main` is the grid, so
   // the date and its arrows land in the same column as the calendar they drive
   // — and they still go out with the first flush, long before Wix answers.
-  const planner = weeks ? plannerColumn({ weeks, month, date, today: today || localDate() }) : '';
-  return `${planner}<div class="detail">${dayDetail({ date, sittings, back })}</div>`;
+  const now = today || localDate();
+  const planner = weeks ? plannerColumn({ weeks, month, date, today: now }) : '';
+  return `${planner}<div class="detail">${dayDetail({ date, sittings, rooms, now, back })}</div>`;
 }
 
 /**
@@ -71,7 +75,7 @@ function plannerColumn({ weeks, month, date, today }) {
   </aside>`;
 }
 
-function dayDetail({ date, sittings, back }) {
+function dayDetail({ date, sittings, rooms, now, back }) {
   // A sitting only exists because something had that start time. If everything
   // at it was abandoned, there is no sitting to run and an empty card saying so
   // is just noise — the abandoned cue below already accounts for them.
@@ -81,8 +85,11 @@ function dayDetail({ date, sittings, back }) {
 
   if (real.length === 0) {
     const cues = `${abandonedAll ? chaseCue(date, abandonedAll) : ''}${offDiary ? offDiaryCue(date, offDiary) : ''}`;
-    return `<p class="empty">Nothing booked for this day.</p>
-      ${cues ? `<div class="cues">${cues}</div>` : ''}`;
+    // A day with no sittings is not an empty day. Somebody may still be asleep
+    // upstairs, and the room strip is the whole reason they would find out.
+    return `<p class="empty">Nothing booked in for tea or dinner.</p>
+      ${cues ? `<div class="cues">${cues}</div>` : ''}
+      ${roomsPanel(rooms, date, now)}`;
   }
 
   const totalCovers = real.reduce((total, sitting) => total + sitting.covers, 0);
@@ -113,7 +120,96 @@ function dayDetail({ date, sittings, back }) {
     </section>`;
   }).join('');
 
-  return summary + body;
+  // Upstairs comes before the sittings: it is short, and it is what somebody
+  // opening this page at seven in the morning came to read.
+  return summary + roomsPanel(rooms, date, now) + body;
+}
+
+/**
+ * The rooms, for the person who has to make them up.
+ *
+ * Only rows worth a morning are listed. A free room needs nobody, and eleven
+ * lines of "Free" would bury the three that matter — but a room emptied this
+ * morning is listed even though nobody is in it tonight, because stripping it
+ * is exactly the job.
+ *
+ * The note at the bottom is not decoration. This is availability, not a booking
+ * list: two stays back to back in one room look like one stay, so a changeover
+ * can be real and invisible here. Anyone planning a day off the screen has to
+ * know that, and the place to tell them is the screen.
+ */
+function roomsPanel(rooms, date, now) {
+  if (!rooms) {
+    // A night already behind us and a freetobook that fell over are not the
+    // same absence, and telling somebody the system is broken when it simply
+    // cannot look backwards would send them off to fix nothing.
+    const why = date < now
+      ? `freetobook's availability only looks forward, so who was in which room that
+         night is not something it will say.`
+      : `freetobook did not answer, so tonight's rooms are not shown.
+         The diary above is unaffected.`;
+    return `<section class="rooms">
+      <h2><span>Rooms</span></h2>
+      <p class="fineprint">${why}</p>
+    </section>`;
+  }
+
+  const listed = rooms.rooms.filter(needsAttention);
+  const let_ = rooms.rooms.filter(isLet).length;
+
+  const house = rooms.wholeHouse
+    ? `<p class="wholehouse">${BED} <span><b>Whole house</b> &mdash; exclusive use is booked,
+       so every bedroom is in play.</span></p>`
+    : '';
+
+  // A night the lodge has taken off sale entirely comes back as every room
+  // closed out, one row each. Eleven identical lines say the same thing eleven
+  // times and bury the one fact worth reading, which is that it is shut.
+  const shut = listed.length === rooms.rooms.length
+    && listed.every((room) => room.state === ROOM.closed);
+
+  const body = shut
+    ? '<p class="wholehouse"><span>Closed out &mdash; nothing upstairs is on sale for this night.</span></p>'
+    : listed.length
+      ? listed.map(roomRow).join('')
+      : '<p class="empty">Nobody staying, nothing to turn round.</p>';
+
+  // The one gap worth interrupting for. Today is the first night the feed
+  // covers, so last night is not in it — and a room emptied this morning is
+  // therefore indistinguishable from one nobody had booked at all.
+  const blindSpot = rooms.priorKnown ? '' : `<p class="fineprint">The feed starts tonight,
+    so this morning's changeovers are not in it: a room emptied today reads as free, and
+    a guest arriving today reads the same as one already here.</p>`;
+
+  return `<section class="rooms">
+    <h2>
+      <span>Rooms</span>
+      <span class="count">${let_} of ${rooms.lettable} let${rooms.departures
+        ? ` &middot; ${rooms.departures} to turn round` : ''}</span>
+    </h2>
+    ${house}${body}${blindSpot}
+    <p class="fineprint">From freetobook's availability, which shows whether a room is
+      taken and not who is in it. Two stays back to back in the same room read as one,
+      so a changeover can be missed &mdash; check freetobook before stripping a bed.</p>
+  </section>`;
+}
+
+function roomRow(room) {
+  const tone = room.state === ROOM.arriving ? ' arriving'
+    : room.state === ROOM.departed ? ' departed'
+    : room.state === ROOM.maintenance || room.state === ROOM.closed ? ' blocked'
+    : '';
+  const said = room.state === ROOM.departed ? 'Departed this morning'
+    : room.state === ROOM.arriving ? 'Arriving today'
+    : room.state === ROOM.staying ? 'Staying tonight'
+    : roomStateLabel(room.state);
+
+  return `<div class="roomrow">
+    <span class="rname">${escape(room.name)}
+      <span class="rgroup">${room.group === 'cottages' ? 'Cottage' : 'Bedroom'}</span>
+    </span>
+    <span class="rtag${tone}">${escape(said)}</span>
+  </div>`;
 }
 
 export function bookingRow(booking, back = '/') {

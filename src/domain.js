@@ -80,6 +80,39 @@
  * @property {(id: string, changes: object) => Promise<Booking>} apply
  */
 
+/**
+ * The other half of the lodge: bedrooms and cottages, which freetobook sells.
+ *
+ * A dining booking is a moment — a sitting at 13:30. A room is let for a
+ * *night*, and the night is named by the calendar date it starts on. So this
+ * side of the diary is keyed by date rather than by instant, and asks for a
+ * range of dates rather than a UTC window.
+ *
+ * What can be known here is narrower than a booking, and deliberately so. The
+ * feed behind it is freetobook's public availability, which says whether a room
+ * is taken and nothing whatever about who is in it. There are no names, no
+ * arrival times and no contact details to be had — see
+ * `adapters/freetobook-rooms.js` for what that costs.
+ *
+ * @typedef {object} Room
+ * @property {number} id
+ * @property {string} name    As it reads on the public site — "River Room".
+ * @property {string} group   'rooms' for bedrooms, 'cottages' for the cottages.
+ * @property {string} state   See ROOM.
+ *
+ * @typedef {object} RoomDay
+ * @property {string}  date         The night, as `YYYY-MM-DD`.
+ * @property {Room[]}  rooms        Every lettable room, in the site's own order.
+ * @property {number}  occupied     Rooms let that night.
+ * @property {number}  lettable     Rooms there are to let at all.
+ * @property {number}  arrivals     Rooms whose first night this is.
+ * @property {number}  departures   Rooms emptied that morning — a changeover.
+ * @property {boolean} wholeHouse   Exclusive use is booked, so the house is gone.
+ *
+ * @typedef {object} RoomsRepository
+ * @property {(range: {from: string, to: string}) => Promise<Map<string, RoomDay>>} inRange
+ */
+
 /** Where a booking has got to. Mirrors what staff need to see, not Wix's enum. */
 export const STATUS = {
   held: 'held',               // mid-checkout; nobody has committed to anything
@@ -99,6 +132,48 @@ export const PAYMENT = {
   unpaid: 'unpaid',
   refunded: 'refunded',
 };
+
+/**
+ * What is happening to a room on a given night, in the vocabulary of the person
+ * who has to make the bed.
+ *
+ * `departed` is the one that is about the morning rather than the night: the
+ * room is empty tonight because the guests left today, which is the whole
+ * reason it needs stripping.
+ */
+export const ROOM = {
+  arriving: 'arriving',       // first night of a stay — must be ready
+  staying: 'staying',         // stay continues — service, don't strip
+  let: 'let',                 // in use, with no way to tell which of those two
+  departed: 'departed',       // emptied this morning — full changeover
+  free: 'free',
+  maintenance: 'maintenance', // blocked in freetobook as under maintenance
+  closed: 'closed',           // closed out — not for sale, not a guest either
+};
+
+export function roomStateLabel(state) {
+  return {
+    [ROOM.arriving]: 'Arriving',
+    [ROOM.staying]: 'Staying',
+    [ROOM.let]: 'In use',
+    [ROOM.departed]: 'Departed',
+    [ROOM.free]: 'Free',
+    [ROOM.maintenance]: 'Maintenance',
+    [ROOM.closed]: 'Closed out',
+  }[state] || state;
+}
+
+/** Rooms with something to do about them. A free room needs no one's morning. */
+export function needsAttention(room) {
+  return room.state !== ROOM.free;
+}
+
+/** Rooms with a guest in them tonight. */
+export function isLet(room) {
+  return room.state === ROOM.arriving
+    || room.state === ROOM.staying
+    || room.state === ROOM.let;
+}
 
 /**
  * Wix expires a held or awaiting-payment reservation after ten minutes, but it

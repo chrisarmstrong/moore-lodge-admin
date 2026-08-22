@@ -177,7 +177,7 @@ function dominantExperience(bookings, experiences) {
  * The month laid out as whole Monday-to-Sunday weeks, with the leading and
  * trailing days of the neighbouring months included so the grid is square.
  */
-export function monthGrid(isoMonth, sittingsByDate) {
+export function monthGrid(isoMonth, sittingsByDate, roomsByDate = null) {
   const dates = datesInMonth(isoMonth);
   const cells = [];
 
@@ -191,6 +191,9 @@ export function monthGrid(isoMonth, sittingsByDate) {
       day: Number(date.slice(8)),
       outside: false,
       sittings,
+      // Null rather than an empty day when freetobook has not answered: a cell
+      // that says nothing is honest, one that says "no rooms let" is not.
+      rooms: roomsByDate?.get(date) || null,
       covers: sittings.reduce((total, sitting) => total + sitting.covers, 0),
       abandoned: sittings.reduce((total, sitting) => total + sitting.abandoned, 0),
       inProgress: sittings.reduce((total, sitting) => total + sitting.inProgress, 0),
@@ -255,5 +258,37 @@ export function monthSummary(sittingsByDate) {
     offDiaryGuests,
     seatsOffered,
     occupancy: seatsOffered ? Math.round((covers / seatsOffered) * 100) : null,
+  };
+}
+
+/**
+ * Headline figures for a stretch of nights upstairs, for the strip above the
+ * grid. Null when there is nothing to say — the tile then shows a dash rather
+ * than a zero, which would read as an empty house.
+ */
+export function roomsSummary(roomsByDate) {
+  if (!roomsByDate || roomsByDate.size === 0) return null;
+
+  let roomNights = 0;
+  let lettableNights = 0;
+  let wholeHouseNights = 0;
+  for (const day of roomsByDate.values()) {
+    roomNights += day.occupied;
+    lettableNights += day.lettable;
+    if (day.wholeHouse) wholeHouseNights += 1;
+  }
+
+  // The first night actually covered. freetobook will not discuss a night that
+  // has passed, so the figure for the month in progress starts partway through
+  // it — and a percentage of an unstated span is a number that misleads.
+  const covered = [...roomsByDate.keys()].sort();
+
+  return {
+    roomNights,
+    lettableNights,
+    wholeHouseNights,
+    from: covered[0],
+    to: covered[covered.length - 1],
+    occupancy: lettableNights ? Math.round((roomNights / lettableNights) * 100) : null,
   };
 }
