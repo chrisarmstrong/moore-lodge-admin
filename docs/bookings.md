@@ -168,6 +168,80 @@ number on the sitting:
   Samson already spreads that back over the bedrooms. The same night has to
   close the dining sittings, or we sell an afternoon tea into a wedding.
 
+## Where the database lives
+
+Neither repo, and that is the point.
+
+The website has to sell a tea and Samson has to run the service off the same
+bookings, so the instinct is to pick a home and give the other one an API. Both
+picks are wrong for the same reason: whoever holds the database ends up holding
+the rules, and the other one grows a second copy of them.
+
+The rules here are not incidental. The oversell guard, the ledger the payment
+status is derived from, the hold sweeper, the policy snapshot — each has to
+exist exactly once or they drift, and the day they drift is the day a seat is
+sold twice.
+
+So the database belongs to neither. **A third Worker owns it, and both of the
+others are its clients.**
+
+```
+  guest's browser                                  staff phone
+        │                                               │
+        │ same-origin /api/booking/*             Cloudflare Access
+        ▼                                               ▼
+  moore-lodge-website  ──┐                        samson  ──┐
+  no D1, no secrets      │  service bindings                │
+                         └────────▶  booking core  ◀────────┘
+                                     D1 + Stripe live here,
+                                     and nowhere else
+```
+
+**Service bindings, not a public API.** A service binding is a Worker calling
+another Worker as a function — no DNS, no network hop, no token to rotate, and
+nothing reachable from outside that was not deliberately exposed. An HTTP API
+between our own Workers would mean publishing an endpoint, authenticating it,
+and then defending it, all to solve a problem the platform solves for free.
+
+It also settles a question that would otherwise be awkward. Samson is behind
+Cloudflare Access, and `src/worker.js` verifies the assertion again in-process
+precisely so that reaching the origin directly is not a way round the edge. A
+service binding *does* reach the origin directly — so pointing one at Samson
+would be met by its own authentication and refused, correctly. The core is a
+separate Worker rather than a back door into this one.
+
+**The public Worker gets a capability, not a database.** `moore-lodge-website`
+is internet-facing with nothing in front of it. Give it a D1 binding and one
+careless endpoint exposes every guest's phone number, allergies and address.
+Give it a service binding and the worst it can do is what the core is willing to
+be asked: what is available, hold these seats, confirm this payment, show the
+booking behind this signed token. Guest records, refunds, vouchers and the
+schedule are on the surface Samson gets and the website never sees.
+
+**The browser only ever talks to `moorelodge.co.uk`.** The website exposes
+`/api/booking/*` and forwards through the binding, which keeps every fetch
+same-origin — no CORS, no preflight, no second hostname in the address bar
+during a checkout. Stripe's webhook lands on the same origin and is forwarded
+the same way, with the raw body and signature intact so the core can verify it.
+The public Worker never holds the Stripe key.
+
+**One repo, two Workers.** The core belongs beside `src/domain.js` rather than
+in a third repository — it is the same vocabulary, and a shared module across
+two repos is copied code with extra steps. It deploys separately, which is what
+keeps the promise this repo opened with: editing the back office cannot take the
+checkout down.
+
+```jsonc
+// the core — the only thing holding either
+"d1_databases": [{ "binding": "DB", "database_name": "moore-lodge" }]
+
+// samson and the website — each holding a capability instead
+"services": [{ "binding": "BOOKINGS", "service": "moore-lodge-bookings" }]
+```
+
+None of this is needed for the launch. Switch one touches no database at all, so
+this decision gets made properly rather than on a Saturday.
+
 ## Availability, and two people after one last table
 
 The only genuinely hard technical problem here, and worth getting right on day
