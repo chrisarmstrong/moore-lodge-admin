@@ -18,6 +18,15 @@ const SCHEDULED_SLOTS = '/table-reservations/reservations/v1/scheduled-time-slot
 // somebody is looking at them, so they are never served from cache.
 const CONFIG_TTL = 600;
 
+/**
+ * The widest window the scheduled-slots endpoint will answer.
+ *
+ * It rejects anything 24 hours or longer outright — "duration between startDate
+ * and endDate must be less than 24 hours" — which a whole local day already is,
+ * never mind a week of chips. So a wider range is asked for in pieces.
+ */
+const MAX_SLOT_RANGE_MS = 24 * 60 * 60 * 1000 - 1000;
+
 /** When no experience says otherwise. A table is two hours. */
 const DEFAULT_MINUTES = 120;
 
@@ -119,42 +128,85 @@ export class WixBookings {
    * location's, and this endpoint never returns a slot outside opening hours —
    * so a date with no slots is a date the lodge is shut for that experience.
    *
-   * `partySize` is asked for and deliberately given as 1. It is a probe for
-   * what is running, not a filter: a sitting that cannot fit the party is still
-   * worth showing, because somebody on the phone may decide to squeeze them in.
+   * `partySize` is a probe for what is running, not a filter: a sitting that
+   * cannot fit the party is still worth showing, because somebody on the phone
+   * may decide to squeeze them in. So it asks for the smallest party the
+   * sitting will take, and lets the caller decide what to do with a full one.
+   *
+   * The range is asked for a day at a time because the endpoint will not answer
+   * a wider one, so a week of chips is eight round trips rather than one. They
+   * go together, and the alternative is a form that cannot say what runs.
    */
-  async scheduledSlots({ start, end, experienceId = null, partySize = 1 }) {
-    const body = {
-      reservationLocationId: await this.locationId(),
-      timeRange: { startDate: start.toISOString(), endDate: end.toISOString() },
-      partySize,
-      // Absent from the published request schema, named in the Experiences
-      // docs — the same asymmetry as experienceId on Create Reservation.
-      ...(experienceId ? { experienceId } : {}),
-    };
+  async scheduledSlots({ start, end, experienceId = null, partySize = null }) {
+    const [reservationLocationId, party] = await Promise.all([
+      this.locationId(),
+      partySize || this.smallestParty(experienceId),
+    ]);
 
-    const { timeSlots = [] } = await this.wix.post(SCHEDULED_SLOTS, body);
+    const asked = await Promise.all(dayPieces(start, end).map((piece) => this.wix.post(
+      SCHEDULED_SLOTS,
+      {
+        reservationLocationId,
+        timeRange: { startDate: piece.start.toISOString(), endDate: piece.end.toISOString() },
+        partySize: party,
+        // Absent from the published request schema, named in the Experiences
+        // docs — the same asymmetry as experienceId on Create Reservation. It
+        // does work: the answer is the experience's own schedule, not the
+        // location's.
+        ...(experienceId ? { experienceId } : {}),
+      },
+    )));
 
-    return timeSlots
-      .filter((slot) => slot.startDate)
+    // Consecutive pieces meet on an instant, and a sitting starting exactly
+    // there is answered by both of them.
+    const byStart = new Map();
+    for (const slot of asked.flatMap((response) => response.timeSlots || [])) {
+      if (slot.startDate && !byStart.has(slot.startDate)) byStart.set(slot.startDate, slot);
+    }
+
+    return [...byStart.values()]
       .map((slot) => ({
         startsAt: new Date(slot.startDate),
         minutes: slot.duration ?? null,
-        // UNAVAILABLE at a party of one means there is genuinely no room.
+        // UNAVAILABLE for the smallest party the sitting will take means there
+        // is genuinely no room. Asked for a party of one — which this used to
+        // do — every sitting comes back unavailable at a lodge with a minimum
+        // of two, and the whole form reads as full.
         full: slot.status === 'UNAVAILABLE',
       }))
       .sort((a, b) => a.startsAt - b.startsAt);
   }
 
+  /**
+   * The smallest party Wix will look for a table for.
+   *
+   * The probe has to be a party the sitting actually accepts, or the answer is
+   * "unavailable" for reasons that have nothing to do with whether there is
+   * room. The experience sets its own minimum and overrides the location's.
+   */
+  async smallestParty(experienceId = null) {
+    if (experienceId) {
+      const experience = (await this.experiences()).get(experienceId);
+      if (experience?.partyMin) return experience.partyMin;
+    }
+    const location = await this.locationRecord();
+    return location.configuration?.onlineReservations?.partySize?.min || 1;
+  }
+
   /** The location every reservation belongs to. One lodge, one location. */
-  async locationId() {
-    if (this.location) return this.location;
-    const locations = await this.wix.cachedQueryAll(LOCATIONS_QUERY, {}, 'reservationLocations',
-      { ttl: CONFIG_TTL, key: 'all', ctx: this.ctx });
-    const first = locations[0];
-    if (!first?.id) throw new Error('This site has no reservation location.');
-    this.location = first.id;
+  locationRecord() {
+    this.location ||= (async () => {
+      const locations = await this.wix.cachedQueryAll(LOCATIONS_QUERY, {}, 'reservationLocations',
+        { ttl: CONFIG_TTL, key: 'all', ctx: this.ctx });
+      const first = locations[0];
+      if (!first?.id) throw new Error('This site has no reservation location.');
+      return first;
+    })();
     return this.location;
+  }
+
+  async locationId() {
+    return (await this.locationRecord()).id;
   }
 
   /**
@@ -324,6 +376,22 @@ function toBooking(reservation, labels) {
     source: SOURCE_FROM_WIX[reservation.source] || 'online',
     archived: reservation.archived === true,
   };
+}
+
+/**
+ * A range the endpoint will answer, or the fewest equal pieces that add up to
+ * it. Seven days of chips is eight pieces of twenty-one hours.
+ */
+function dayPieces(start, end) {
+  const span = end.getTime() - start.getTime();
+  if (span <= 0) return [];
+
+  const pieces = Math.ceil(span / MAX_SLOT_RANGE_MS);
+  const step = span / pieces;
+  return Array.from({ length: pieces }, (_, index) => ({
+    start: new Date(start.getTime() + Math.round(index * step)),
+    end: new Date(start.getTime() + Math.round((index + 1) * step)),
+  }));
 }
 
 function pricePence(policy) {
