@@ -7,6 +7,59 @@ now and a migration later.
 Companion to this document, laid out for reading:
 <https://claude.ai/code/artifact/27c74f89-19c4-469c-bcc9-59f70a5d6876>
 
+## Decisions taken
+
+Four of the eight open questions are settled, and each one takes something out
+of the build.
+
+**VAT registered, and we swallow it.** Every price stored is gross — what the
+guest pays — with the rate carried beside it so an old booking is never
+recomputed at a new one. Net and VAT are derived. Three consequences are not
+obvious and all three are in the schema:
+
+- **The tax point is the payment, not the sitting.** VAT on an August payment
+  for a December tea falls in the August return, while the revenue is deferred
+  until the tea is served. The two reports disagree on purpose:
+  `ledger_entry.taken_at` answers the VAT question and the sitting's date
+  answers the revenue one, off the same table.
+- **The confirmation email is a VAT receipt.** It needs the VAT number and
+  either the VAT amount or the rate; below £250 a simplified invoice is enough.
+  `venue.vat_number` exists for this.
+- **Vouchers get harder rather than easier.** If everything we sell is standard
+  rated, our vouchers are probably *single-purpose*, which means VAT falls due
+  when the voucher is sold rather than when it is redeemed — and the VAT on one
+  that is never redeemed is not recovered. That is a different cashflow shape
+  from the one most people assume. Worth ruling on before the first sale.
+
+**Cancellation is flexible.** So there is no policy engine: one permissive
+policy row, versioned and snapshotted onto the booking so that tightening the
+terms later cannot reach back. Nothing in the system forfeits money on its own.
+Flexible means staff discretion with an audit row, not an absent policy —
+`policy.free_before_mins` is nullable and stays that way until it isn't.
+
+That combination — full prepayment with flexible cancellation — is real
+exposure, and the answer to it is architectural rather than contractual. Two
+things get more valuable: **the waitlist**, because a late cancellation is
+resellable within hours if somebody is waiting, and **amendments**, because
+"we can move you" keeps both the money and the cover where a refund loses both.
+Offer the move before the refund. It is the reason amendments have come up the
+list.
+
+**One kitchen.** So a sitting's capacity is complete on the sitting itself and
+there is no pool table to build — one fewer table at cutover. The constraint is
+the pass rather than the room, and if tea ever runs in two rooms at once a pool
+joins to `sitting` without anything above it moving.
+
+**Covers, not tables.** `sitting.seats` is a count and a line takes some of it.
+One thing to be deliberate about: covers-only makes capacity theoretical rather
+than realisable, because selling the last two of twenty-four to a pair can
+strand seats at a four-top. So set `seats` to what the room genuinely seats
+across a normal mix of parties, not to the fire limit, and let
+`overbook_allowance` carry the squeeze. `offering.party_max` still matters
+separately — fourteen covers free is not the same as a party of fourteen being
+seatable. Tables remain addable later as an assignment from a line, changing
+nothing above them.
+
 ## The seam already exists
 
 `src/domain.js` defines `BookingsRepository` in Samson's own vocabulary, with
@@ -83,9 +136,11 @@ never touches a sitting with a booking on it.
 A sitting draws seats from a `space`. Two reasons that is a table rather than a
 number on the sitting:
 
-- **Two sittings can share one kitchen.** Tea in the Orangery and tea in the
-  Dining Room at 13:00 are two seat counts and one pass. That is a third
-  capacity — a pool both sittings draw on — and it is a row, not a special case.
+- **The kitchen is the constraint, not the room.** There is one, so today a
+  sitting's seat count is the whole answer and no pool is built. Tea in the
+  Orangery and tea in the Dining Room at 13:00 would be two seat counts and one
+  pass — a pool row both sittings draw on, joined to `sitting`, added without
+  disturbing anything above it.
 - **Exclusive use eats the building.** freetobook sells the house as a unit and
   Samson already spreads that back over the bedrooms. The same night has to
   close the dining sittings, or we sell an afternoon tea into a wedding.
@@ -250,11 +305,17 @@ they have been charged twice. As a diff against the lines:
 The reference never changes, the ledger records what moved, the audit log says
 who did it. Build the staff-side version for cutover; let guests do it later.
 
-**Resist a rules engine for policy.** A small versioned policy — free beyond a
-threshold, a percentage inside it, nothing in the final window, plus how
-no-shows are treated — **snapshotted onto the booking when it is made**. Never
-resolve an old booking against today's terms. In a dispute in March what we need
-is what they agreed to in November.
+**Resist a rules engine for policy.** Terms are flexible today, so v1 is a
+single permissive policy row — refund freely, at staff discretion, with a reason
+and an audit entry — **snapshotted onto the booking when it is made**. Never
+resolve an old booking against today's terms: in a dispute in March what we need
+is what they agreed to in November, which is also what makes tightening the
+terms later a new policy version rather than a migration.
+
+Flexibility is why the move matters more than the refund. A guest who cannot
+come on the Saturday is offered the Sunday first; the money stays, the cover is
+not wasted, and the ledger records what moved. A refund is the second answer,
+not the first, and the interface should say so.
 
 ## Notifications are an outbox, not a send
 
@@ -401,7 +462,7 @@ Smallest set that lets Wix go dark, and what deliberately waits.
 | **Cutover** | Guest self-service link | Replaces a capability guests already have |
 | **Cutover** | Phone bookings and staff actions on the new store | The forms exist; they need the adapter |
 | **Cutover** | Audit log, importer, redirects | The switch itself |
-| Fast follow | Amendments — date, party size, offering swap | Staff can do it by hand briefly. Not for long |
+| **Cutover** | Amendments — date, party size, offering swap | Flexible terms make the move the first answer, not the refund |
 | Fast follow | Waitlist | Pure upside; nothing depends on it |
 | Fast follow | Per-guest dietary detail | Booking-level notes hold the line briefly |
 | Fast follow | Add-ons and upsells | The lines model is there; merchandising is not urgent |
@@ -438,25 +499,56 @@ only capability where Wix holds something of ours — money we already owe peopl
 
 ## Open questions
 
-Everything above can be settled from the code. These cannot.
+Four remain, and none of them block the schema.
 
-1. Is the business VAT registered, and are prices shown inclusive?
-2. Entitlement vouchers at a raised price — honour the experience, or the money?
-3. What is the cancellation policy, precisely? Thresholds and percentages.
-   Better to copy what Wix enforces today than invent one.
-4. Full prepayment, or a deposit? Full is assumed, which is what Wix appears to do.
-5. Does more than one sitting ever run at once, and do they share a kitchen?
-   Decides whether the capacity pool is built now or left as a column.
-6. Tables, or only covers? Covers-only is much simpler and probably sufficient,
-   and it is a hard thing to add later.
-7. How far ahead do we sell? Sets the generation horizon and how much of
-   Christmas must exist by cutover.
-8. Is there a target date for switching Wix off? The sequencing is drawn to be
-   cuttable; the date says where to cut.
+1. **Entitlement vouchers at a raised price — honour the experience, or the
+   money?** More urgent than it was, because if these are single-purpose for VAT
+   then the tax is settled at sale and the entitlement is a promise made against
+   money already accounted for. Recommendation stands: honour the experience.
+2. **Full prepayment, or a deposit?** Full is assumed, and is what Wix appears
+   to do. Flexible cancellation makes it a slightly bolder position than it
+   sounds — a deposit limits the exposure, at the cost of a balance to chase.
+3. **How far ahead do we sell?** Sets the generation horizon and how much of
+   Christmas has to exist by cutover. A configuration value, not a schema one.
+4. **Is there a target date for switching Wix off?** The sequencing is drawn to
+   be cuttable; the date says where to cut.
+
+And two for the accountant rather than for us: whether our vouchers are
+single-purpose for VAT, and whether an undated voucher carries the fourteen-day
+distance-selling cancellation right that a dated sitting does not.
+
+## The schema
+
+`migrations/0001_bookings.sql` is the model above, made concrete and reflecting
+the four decisions taken. Seventeen tables, and four of them are the argument:
+
+- **`booking_line`** — one row per thing sold, so a party of four wanting two
+  Classic, one Champagne and a children's tea is four lines rather than a party
+  size. Price and VAT rate are captured at sale.
+- **`sitting`** — a generated row carrying `seats`, `taken` and
+  `overbook_allowance`. The oversell guard is one conditional UPDATE against it.
+- **`ledger_entry`** — payments, refunds, voucher redemptions, adjustments and
+  chargebacks as kinds of one thing, because the question worth answering fast
+  is always "what is this booking worth now" and that should be one SUM.
+  `PAYMENT` in `src/domain.js` is computed from it and never written down.
+- **`voucher`** — monetary, entitlement and complimentary in one table,
+  settling through the ledger like a card does.
+
+Four behaviours were exercised against SQLite before the file was committed: the
+oversell guard refusing the party that does not fit and admitting the staff
+squeeze; a booking part-settled by a £90 voucher and a card reading back as
+paid; one guest dropped from a party of four leaving the remainder still paid;
+and a duplicated Stripe refund webhook rejected by `ledger_provider_once`
+rather than refunding twice.
+
+Nothing is wired up. There is no D1 binding in `wrangler.jsonc` yet, and no
+adapter — deliberately, because the next thing that should touch this schema is
+real data.
 
 ## Next
 
-The smallest useful step is the D1 schema and migrations, plus the importer
-running against a scratch database off live Wix data. That gets real bookings
-into the new shape within days and finds the edges this document has guessed at
-— the only honest way to know whether the model holds.
+The importer, pointed at a scratch database off live Wix data. That is what
+tests whether the model holds — a year of real bookings, real names and real
+dietary chaos going into these tables and coming back out as `Booking`s the
+existing views can render, with nothing in `src/views/` changed. If that works,
+the seam has done its job and the rest is building the checkout.
