@@ -18,7 +18,7 @@ import { dayShell, dayBody } from './views/day.js';
 import { listShell, listBody, KINDS } from './views/list.js';
 import { newShell, newBody } from './views/new.js';
 import { readDraft } from './draft.js';
-import { page, pageHead, pageTail, skeleton, RETIRE_SKELETON, escape } from './views/layout.js';
+import { page, pageHead, pageTail, skeleton, SHELL_FLUSHED, RETIRE_SKELETON, escape } from './views/layout.js';
 import { ACTIONS, permits } from './actions.js';
 import {
   localDate, localMonth, monthWindow, dayWindow, shiftDate, datesInMonth,
@@ -347,6 +347,10 @@ async function diary(bookings, window) {
  *
  * The status line has already gone by the time the body is built, so a failure
  * here can only be reported inside the page rather than as a 502.
+ *
+ * The first flush ends with a marker. A tap that was handled in the page reads
+ * this answer as it streams, and the marker is how it tells a whole shell from
+ * a chunk that stopped somewhere inside one.
  */
 function stream(shell, skeletonKind, buildBody) {
   const { readable, writable } = new TransformStream();
@@ -355,7 +359,7 @@ function stream(shell, skeletonKind, buildBody) {
   const write = (text) => writer.write(encoder.encode(text));
 
   (async () => {
-    await write(pageHead(shell) + skeleton(skeletonKind));
+    await write(pageHead(shell) + skeleton(skeletonKind) + SHELL_FLUSHED);
     try {
       const body = await buildBody();
       await write(RETIRE_SKELETON + body);

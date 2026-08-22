@@ -115,7 +115,7 @@ ${IOS_SPLASH}
 </header>
 <p class="stale" id="stale" hidden></p>
 ${flash ? `<p class="flash${flash.ok ? '' : ' bad'}" role="status">${escape(flash.text)}</p>` : ''}
-<main id="main"${wide || split ? ` class="${[wide && 'wide', split && 'split'].filter(Boolean).join(' ')}"` : ''}>
+<main id="main" tabindex="-1"${wide || split ? ` class="${[wide && 'wide', split && 'split'].filter(Boolean).join(' ')}"` : ''}>
   ${titlebar || `<div class="head"><h1>${escape(heading)}</h1>${sub ? `<p class="sub">${escape(sub)}</p>` : ''}</div>`}
   ${nav}`;
 }
@@ -140,16 +140,40 @@ export const STAT_TILES = 6;
  * Shown while the diary is on its way, then hidden by a stylesheet that
  * arrives with the real content. No script, no flash of empty page, and the
  * shape matches what replaces it so nothing jumps.
+ *
+ * The pieces are direct children of `main` rather than one wrapper, because on
+ * a landscape tablet `main` is the grid and only a direct child can be placed
+ * in it. A wrapper put the whole skeleton in the first cell and the page
+ * jumped from one column to two the moment Wix answered.
  */
 export function skeleton(kind) {
-  const rows = kind === 'month'
-    ? `<div class="sk-stats">${'<div class="sk-tile"></div>'.repeat(STAT_TILES)}</div>
-       <div class="sk-grid">${'<div class="sk-cell"></div>'.repeat(35)}</div>`
-    : `${'<div class="sk-card"><div class="sk-line w40"></div><div class="sk-line w70"></div><div class="sk-line w55"></div></div>'.repeat(3)}`;
-  return `<div id="sk" class="sk" aria-hidden="true">${rows}</div>`;
+  if (kind === 'month') {
+    return `<div class="sk sk-stats" aria-hidden="true">${'<div class="sk-tile"></div>'.repeat(STAT_TILES)}</div>
+      <div class="sk sk-grid" aria-hidden="true">${'<div class="sk-cell"></div>'.repeat(35)}</div>`;
+  }
+  // The planner is hidden below 62rem, exactly as the real one is, so this
+  // costs a phone nothing and saves a tablet the reflow.
+  return `<aside class="planner sk" aria-hidden="true">
+      <div class="pgrid">${'<div class="pdow"></div>'.repeat(7)}${'<div class="pcell"></div>'.repeat(35)}</div>
+    </aside>
+    <div class="detail sk" aria-hidden="true">${'<div class="sk-card"><div class="sk-line w40"></div><div class="sk-line w70"></div><div class="sk-line w55"></div></div>'.repeat(3)}</div>`;
 }
 
-/** Emitted just before the real content, which retires the skeleton. */
+/**
+ * Everything a client-side navigation can put on screen before the network has
+ * said a word: the shape of the page that was asked for, with the title and the
+ * arrows still to come. The server's first flush replaces it a moment later.
+ */
+export function navSkeleton(kind) {
+  return `<div class="titlebar sk sk-bar" aria-hidden="true">
+      <span class="arrow"></span>
+      <div class="title"><span class="sk-line"></span></div>
+      <span class="arrow"></span>
+    </div>
+    <nav class="subnav sk sk-nav" aria-hidden="true"><span class="sk-line"></span></nav>
+    ${skeleton(kind)}`;
+}
+
 /**
  * A bed, drawn small.
  *
@@ -162,7 +186,26 @@ export function skeleton(kind) {
 export const BED = '<svg class="bedicon" viewBox="0 0 16 11" aria-hidden="true" focusable="false">'
   + '<path d="M1.6 2.2v7.2M1.6 6.2h12.8v3.2M14.4 9.4V6.2a2 2 0 0 0-2-2H8.4v2"/></svg>';
 
-export const RETIRE_SKELETON = '<style>#sk{display:none}</style>';
+/**
+ * Written at the very end of the first flush.
+ *
+ * A client-side navigation reads the answer as it streams, and needs to know
+ * when it holds a whole shell rather than a chunk that happens to have stopped
+ * somewhere inside one. This says so, costs nothing, and renders nothing.
+ */
+export const SHELL_FLUSHED = '<style data-shell></style>';
+
+/**
+ * Emitted just before the real content, which retires the skeleton.
+ *
+ * `!important` because the skeleton's planner is placed by `main.split > .planner`,
+ * which outweighs a bare class — and a retired skeleton that stays on screen
+ * beside the real one is worse than the specificity.
+ */
+export const RETIRE_SKELETON = '<style>.sk{display:none!important}</style>';
+
+/** The two shapes a navigation can put on screen before the network answers. */
+const NAV_SKELETONS = { month: navSkeleton('month'), day: navSkeleton('day') };
 
 const SCRIPT = `
 (function () {
@@ -233,6 +276,263 @@ const SCRIPT = `
       button.textContent = button.dataset.busy;
     }, 0);
   });
+
+  // ── A tap is answered before the network is ────────────────────────────
+  //
+  // Nothing here may look asleep between a finger landing and the diary
+  // changing. The class goes on at pointerdown rather than being left to
+  // :active, because iOS withholds :active until it has decided the touch is
+  // not the start of a scroll — which is exactly the moment the tap felt dead.
+  var TAPPABLE = '.wordmark,.add,.titlebar .arrow,.subnav a,.nav a,.stat.link,.cue,.act,'
+    + '.chip,.pall,.giveup,.reveal>summary,.more>summary,.ask>summary,'
+    + '.booking .contacts a,.pcell,.cell a.open';
+  // Long enough for the dip to be seen on the quickest tap there is.
+  var HELD = 90;
+  var pressing = null;
+  var pressedAt = 0;
+
+  function unpress(now) {
+    if (!pressing) return;
+    var el = pressing;
+    pressing = null;
+    var left = now ? 0 : HELD - (Date.now() - pressedAt);
+    if (left <= 0) el.classList.remove('pressed');
+    else setTimeout(function () { el.classList.remove('pressed'); }, left);
+  }
+
+  addEventListener('pointerdown', function (event) {
+    if (event.button) return;
+    unpress(true);
+    var target = event.target.closest && event.target.closest(TAPPABLE);
+    if (!target || target.disabled) return;
+    pressing = target;
+    pressedAt = Date.now();
+    target.classList.add('pressed');
+  }, { passive: true, capture: true });
+
+  addEventListener('pointerup', function () { unpress(false); }, { passive: true, capture: true });
+  // A scroll that began on a control was never a press. iOS says so with
+  // pointercancel; everything else says so by scrolling.
+  addEventListener('pointercancel', function () { unpress(true); }, { passive: true, capture: true });
+  addEventListener('scroll', function () { unpress(true); }, { passive: true, capture: true });
+  // Some engines still withhold :active from anything but a link unless the
+  // document is listening for touches at all. It costs nothing to be.
+  addEventListener('touchstart', function () {}, { passive: true });
+
+  // ── The view switches on the tap, not on the answer ─────────────────────
+  //
+  // A navigation is a round trip to Cloudflare and then to Wix, and the page
+  // somebody had just left used to sit there for the whole of it. The server
+  // already streams the shell ahead of the diary; this does the same thing one
+  // step earlier — the shape of the page that was asked for goes up out of what
+  // the URL alone says, and the server's two flushes land into it as they
+  // arrive. Nothing is rendered here that the server did not send.
+  var SHELLS = ${JSON.stringify(NAV_SKELETONS)};
+  var SHELL_MARK = 'data-shell';
+  var able = window.fetch && window.DOMParser && window.TextDecoder
+    && window.ReadableStream && history.pushState && !!document.body.closest;
+
+  /**
+   * The one thing the client has to know that the server also knows, kept to
+   * the two facts a skeleton needs. Anything unrecognised gets the reading
+   * shape, which is what a new route would want anyway.
+   */
+  function shapeOf(path) {
+    if (path.indexOf('/calendar/') === 0) return { kind: 'month', cls: 'wide' };
+    if (path.indexOf('/day/') === 0) return { kind: 'day', cls: 'split' };
+    return { kind: 'day', cls: '' };
+  }
+
+  var WARM_FOR = 5000;
+  var warm = {};
+  var trip = 0;
+  var showing = location.pathname + location.search;
+
+  function ask(href) {
+    return fetch(href, {
+      headers: { 'x-samson-nav': '1' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+      // Manual, so an expired Access session arrives as an opaque redirect that
+      // is handed straight back to the browser. Following it here would fail
+      // CORS at best, and at worst leave the worker's copy of the diary — guest
+      // names, numbers, dietary notes — in place after the session that earned
+      // it had gone.
+      redirect: 'manual',
+    });
+  }
+
+  /**
+   * A finger is on the glass a beat before it lifts. Spend the beat.
+   *
+   * A head start that is never taken up — the finger moved, and it was a
+   * scroll — would otherwise sit there holding a stream open at both ends, so
+   * anything left over is dropped properly rather than just let go of.
+   */
+  function warmUp(href) {
+    var held = warm[href];
+    if (held && Date.now() - held.at < WARM_FOR) return;
+    for (var stale in warm) drop(warm[stale]);
+    warm = {};
+    warm[href] = { at: Date.now(), response: ask(href) };
+  }
+
+  function drop(held) {
+    held.response.then(function (response) {
+      if (response && response.body && !response.bodyUsed) response.body.cancel();
+    }, function () {});
+  }
+
+  /** Single use: a response body can only be read once. */
+  function take(href) {
+    var held = warm[href];
+    delete warm[href];
+    return held && Date.now() - held.at < WARM_FOR ? held.response : ask(href);
+  }
+
+  function destination(event) {
+    if (event.defaultPrevented || event.button || event.metaKey || event.ctrlKey
+      || event.shiftKey || event.altKey) return null;
+    var link = event.target.closest && event.target.closest('a[href]');
+    if (!link || link.target || link.hasAttribute('download')
+      || link.getAttribute('rel') === 'external' || link.classList.contains('skip')) return null;
+    var url = new URL(link.href, location.href);
+    if (url.origin !== location.origin) return null;
+    if (url.pathname + url.search === location.pathname + location.search) return null;
+    // The redirects and the diagnostic answer with something that is not a
+    // page. They stay the browser's business.
+    if (url.pathname === '/' || url.pathname === '/today' || url.pathname === '/whoami') return null;
+    return url;
+  }
+
+  function borrow(doc, selector, attribute) {
+    var there = doc.querySelector(selector);
+    var here = document.querySelector(selector);
+    if (there && here) here.setAttribute(attribute, there.getAttribute(attribute));
+  }
+
+  /**
+   * Takes as much of the answer as has arrived. Each of the server's flushes is
+   * a whole enough document for the parser to hand back a <main>.
+   */
+  function adopt(text) {
+    var doc = new DOMParser().parseFromString(text, 'text/html');
+    var incoming = doc.getElementById('main');
+    if (!incoming) return 'wait';
+
+    // A deploy landed between this page and the one it asked for. Dressing an
+    // old shell in new markup is how a stale stylesheet outlives the page it
+    // was written for; hand the whole thing to the browser instead.
+    var built = doc.querySelector('meta[name=build]');
+    var ours = document.querySelector('meta[name=build]');
+    if (built && ours && built.content !== ours.content) return 'stale';
+
+    document.title = doc.title;
+    borrow(doc, 'meta[name=rendered-at]', 'content');
+    borrow(doc, 'header.bar .add', 'href');
+
+    var next = document.importNode(incoming, true);
+    // The shell that arrives first is a whole <main>, and it has no idea the
+    // diary is still coming. Only arrive() gets to say the page has settled.
+    next.setAttribute('aria-busy', 'true');
+    document.getElementById('main').replaceWith(next);
+
+    var stood = document.querySelector('body > .flash');
+    if (stood) stood.remove();
+    var said = doc.querySelector('body > .flash');
+    if (said) next.parentNode.insertBefore(document.importNode(said, true), next);
+
+    return 'ok';
+  }
+
+  function go(url, push) {
+    var mine = ++trip;
+    var shape = shapeOf(url.pathname);
+    showing = url.pathname + url.search;
+    var give = function () { if (mine === trip) location.replace(url.href); };
+
+    if (push) {
+      history.replaceState({ samson: 1, y: pageYOffset }, '');
+      history.pushState({ samson: 1, y: 0 }, '', url.href);
+    }
+
+    var main = document.getElementById('main');
+    main.className = shape.cls;
+    main.innerHTML = SHELLS[shape.kind];
+    main.setAttribute('aria-busy', 'true');
+    scrollTo(0, 0);
+
+    take(url.href).then(function (response) {
+      if (mine !== trip) return;
+      // An opaque redirect is Access asking for a sign-in, and a body-less or
+      // non-HTML answer is not a page. Both are the browser's to follow.
+      if (!response || !response.body || response.status === 0
+        || response.type === 'opaqueredirect' || response.redirected) return give();
+      if ((response.headers.get('content-type') || '').indexOf('text/html') < 0) return give();
+
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var text = '';
+      var landed = false;
+
+      return (function pump() {
+        return reader.read().then(function (piece) {
+          if (mine !== trip) return reader.cancel();
+          if (!piece.done) {
+            text += decoder.decode(piece.value, { stream: true });
+            // Only once the shell is whole: a chunk that stopped halfway
+            // through one would put half a title bar on screen for as long as
+            // Wix takes to answer.
+            if (!landed && text.indexOf(SHELL_MARK) > 0) {
+              var early = adopt(text);
+              if (early === 'stale') return give();
+              landed = early === 'ok';
+            }
+            return pump();
+          }
+          text += decoder.decode();
+          if (adopt(text) !== 'ok') return give();
+          arrive(push);
+        });
+      })();
+    }).catch(give);
+  }
+
+  function arrive(push) {
+    var main = document.getElementById('main');
+    main.removeAttribute('aria-busy');
+    // Going back means going back to where you were reading.
+    if (!push) scrollTo(0, (history.state && history.state.y) || 0);
+    // Reading starts again at the top of a new page, which a screen reader has
+    // no other way of being told.
+    if (document.activeElement === document.body) main.focus({ preventScroll: true });
+    check();
+  }
+
+  if (able) {
+    // Ours to restore: the content arrives after the browser would have tried.
+    history.scrollRestoration = 'manual';
+
+    addEventListener('pointerdown', function (event) {
+      var url = destination(event);
+      if (url) warmUp(url.href);
+    }, { passive: true, capture: true });
+
+    addEventListener('click', function (event) {
+      var url = destination(event);
+      if (!url) return;
+      event.preventDefault();
+      go(url, true);
+    });
+
+    // Back into a page the browser loaded itself lands here too, already
+    // showing what it is being asked for. Fetching it again would be a second
+    // trip to Wix for a page that is on screen.
+    addEventListener('popstate', function () {
+      if (location.pathname + location.search === showing) return;
+      go(new URL(location.href), false);
+    });
+  }
 })();
 `;
 
@@ -287,6 +587,51 @@ body{
   -webkit-tap-highlight-color:transparent;
 }
 a{color:inherit;touch-action:manipulation}
+/* Nothing on this page waits 300ms to find out whether it was a double tap. */
+a,button,summary,label,input,select,textarea{touch-action:manipulation}
+
+/* ── Press ────────────────────────────────────────────────────────────────
+   The tap highlight is off across the whole app, so this is the only answer a
+   finger gets before the diary changes. Everything that can be tapped dips
+   under it and springs back out — quick going in, slower and slightly past
+   itself coming out, which is what reads as a thing being pushed rather than
+   a thing being redrawn.
+
+   The .pressed class is set on pointerdown by the script: :active on iOS is
+   withheld until the browser has ruled out a scroll, and that pause is most
+   of what "unresponsive" meant here. The :active rules stay as the answer for
+   a pointer, and for the seconds before the script runs. */
+.wordmark,.add,.titlebar .arrow,.subnav a,.nav a,.stat.link,.cue,.act,.chip,.pall,
+.giveup,.reveal>summary,.more>summary,.ask>summary,.booking .contacts a,
+.pcell,.pcell .pn,.pcell .pcovers,.cell a.open{
+  transition:transform .24s cubic-bezier(.16,.84,.28,1.28),background-color .18s ease;
+}
+.pressed{transform:scale(var(--press-scale,.96));transition-duration:.055s}
+.titlebar .arrow{--press-scale:.86}
+.wordmark{--press-scale:.94}
+.chip.num{--press-scale:.9}
+.chip.wide,.cue{--press-scale:.975}
+/* A grid tile pressing in would part from its neighbours and show the rule
+   colour through the gap. The wash carries it, and the number inside does the
+   moving. */
+.stat.link{--press-scale:1}
+.stat.link.pressed{background:var(--sunk)}
+.pcell{--press-scale:1}
+.pcell.pressed{background:var(--press)}
+.pcell.pressed .pn,.pcell.pressed .pcovers{transform:scale(.86)}
+/* The month cell's tap target is an overlay filling the cell, so the press is
+   the overlay itself drawing in — a lit plate inside the cell. The contents
+   cannot be the thing that moves here: above 560px the cell holds a stack of
+   pills rather than one badge, and scaling each of them about its own centre
+   is not one control being pressed. */
+.cell a.open{--press-scale:.94;border-radius:3px}
+.cell a.open.pressed{background:var(--press)}
+.cell:has(a.open.pressed){background:var(--press)}
+
+@media (prefers-reduced-motion:reduce){
+  .pressed{transform:none}
+  .pcell.pressed .pn,.pcell.pressed .pcovers{transform:none}
+}
 
 .skip{position:absolute;left:-9999px;top:0}
 .skip:focus{left:0;z-index:20;background:var(--surface);padding:1rem;border:1px solid var(--accent)}
@@ -478,7 +823,8 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
   text-decoration:none;color:var(--ink);touch-action:manipulation;
 }
 .pcell.outside{background:var(--sunk)}
-.pcell:hover{background:var(--press)}
+@media(hover:hover){.pcell:hover{background:var(--press)}}
+.pcell:active{background:var(--press)}
 .pn{font-size:.72rem;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums}
 .pcovers{
   font-family:var(--display);font-size:.8rem;line-height:1;color:var(--accent);
@@ -840,6 +1186,11 @@ h1{font-family:var(--display);font-weight:300;font-size:clamp(1.6rem,5vw,2.2rem)
 .sk-card{border:1px solid var(--rule);background:var(--surface);padding:1rem;margin-bottom:1rem}
 .sk-line{height:.85rem;background:var(--sunk);border-radius:2px;margin-bottom:.55rem}
 .sk-line.w40{width:40%}.sk-line.w70{width:70%}.sk-line.w55{width:55%}
+/* The title and the arrows are all the URL knows before the server answers.
+   The arrows keep their boxes so nothing shifts when the real ones land. */
+.sk-bar .sk-line{height:1.5rem;width:min(11rem,60%);margin:0 auto}
+.sk-nav{justify-content:center}
+.sk-nav .sk-line{height:.8rem;width:7rem;margin:.55rem 0 0}
 @media (prefers-reduced-motion:no-preference){
   .sk-tile,.sk-cell,.sk-line{animation:pulse 1.4s ease-in-out infinite}
 }

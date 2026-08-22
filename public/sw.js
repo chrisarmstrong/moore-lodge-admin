@@ -70,7 +70,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // Access login, and anything else
 
-  if (request.mode === 'navigate') {
+  // A tap handled inside the page fetches its own replacement, which is a
+  // navigation in everything but `mode`. It must come through here or the
+  // diary stops being available offline the moment the page stops reloading
+  // itself — and, far worse, an Access bounce would stop purging it.
+  if (request.mode === 'navigate' || request.headers.get('x-samson-nav')) {
     event.respondWith(page(event));
     return;
   }
@@ -97,7 +101,9 @@ async function page(event) {
 
     // A navigation request carries `redirect: "manual"`, so an Access bounce
     // arrives as an opaque redirect: status 0, type "opaqueredirect". Handing
-    // it straight back is what makes the browser follow it to the login page.
+    // it straight back is what makes the browser follow it to the login page —
+    // and the page's own fetches ask for the same treatment for the same
+    // reason, so this holds for both.
     if (response.type === 'opaqueredirect' || response.redirected) {
       event.waitUntil(purgeDiary());
       return response;
