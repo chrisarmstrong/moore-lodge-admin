@@ -55,18 +55,42 @@ const EXPERIENCES = [{ id:TEA, archived:false, configuration:{
   reservationForm:{ customFieldDefinitions:[{ id:DIETARY, name:'Dietary requirements' }] },
   visible:true } }];
 
-const LOCATIONS = [{ id:'19e73162', configuration:{ reservationForm:{
-  customFieldDefinitions:[{ id:ALLERGY, name:'Please confirm any allergies.' }] } } }];
+const LOCATIONS = [{ id:'19e73162', configuration:{
+  onlineReservations:{ partySize:{ min:2, max:6 } },
+  reservationForm:{
+    customFieldDefinitions:[{ id:ALLERGY, name:'Please confirm any allergies.' }] } } }];
 
 let calls = [];
 globalThis.fetch = async (url, init) => {
   const body = JSON.parse(init.body);
   calls.push({ url, auth: init.headers.authorization, site: init.headers['wix-site-id'], body });
+  if (url.includes('/scheduled-time-slots')) {
+    // Wix's own rule, and the one this used to trip over.
+    const span = new Date(body.timeRange.endDate) - new Date(body.timeRange.startDate);
+    if (span >= 24 * 60 * 60 * 1000) {
+      return { ok:false, status:400, text: async () => JSON.stringify({
+        message: 'Validation failed: timeRange duration between startDate and endDate must be less than 24 hours',
+      }) };
+    }
+    return { ok:true, status:200, text: async () => JSON.stringify({ timeSlots: SLOTS_FOR(body) }) };
+  }
   const pick = url.includes('/experiences/') ? { experiences: EXPERIENCES }
              : url.includes('/reservation-locations/') ? { reservationLocations: LOCATIONS }
              : { reservations: RESERVATIONS };
   return { ok:true, status:200, text: async () => JSON.stringify(pick) };
 };
+
+/**
+ * A 12:30 and a 14:30 on 6 August, as the live site answers them: available for
+ * a party the sitting will take, and unavailable for anything smaller.
+ */
+const SLOTS_FOR = ({ timeRange, partySize }) => [
+  '2026-08-06T11:30:00Z', '2026-08-06T13:30:00Z',
+].filter((iso) => new Date(iso) >= new Date(timeRange.startDate)
+              && new Date(iso) < new Date(timeRange.endDate))
+  .map((startDate) => ({
+    startDate, duration: 120, status: partySize >= 2 ? 'AVAILABLE' : 'UNAVAILABLE',
+  }));
 
 const render = (shell, body) => pageHead(shell) + body + pageTail();
 
@@ -249,6 +273,40 @@ is('and offers the way back', offHtml.includes('/restore'), true);
 is('it does not offer to take a payment', offHtml.includes('/paid'), false);
 is('the day points at it', dayHtml.includes('/called-off/2026-08-06'), true);
 is('the chase list is not where they went', chaseHtml.includes('Called Off'), false);
+
+console.log('--- the schedule ---');
+{
+  calls = [];
+  const week = { start:new Date('2026-08-05T23:00:00Z'), end:new Date('2026-08-12T23:00:00Z') };
+  const slots = await repo.scheduledSlots({ ...week, experienceId: TEA });
+  const asked = calls.filter(c => c.url.includes('/scheduled-time-slots'));
+
+  is('a week is asked for in pieces, never in one', asked.length > 1, true);
+  is('and no piece is 24 hours or more', asked.every(c =>
+    new Date(c.body.timeRange.endDate) - new Date(c.body.timeRange.startDate) < 24 * 60 * 60 * 1000), true);
+  is('the pieces cover the week end to end', [
+    asked[0].body.timeRange.startDate,
+    asked[asked.length - 1].body.timeRange.endDate,
+  ], [week.start.toISOString(), week.end.toISOString()]);
+  is('the experience is named', asked[0].body.experienceId, TEA);
+
+  // A party of one is below the minimum, so every sitting would come back
+  // unavailable and the form would read as full on a day with room to spare.
+  is('the probe is a party the sitting will take', asked[0].body.partySize, 2);
+  is('so a sitting with room is not called full', slots.map(s => s.full), [false, false]);
+  is('both scheduled sittings come back', slots.map(s => s.startsAt.toISOString()),
+    ['2026-08-06T11:30:00.000Z', '2026-08-06T13:30:00.000Z']);
+  is('and none of them twice', new Set(slots.map(s => +s.startsAt)).size, slots.length);
+
+  // Without an experience the minimum comes from the location instead.
+  calls = [];
+  await repo.scheduledSlots({ start:new Date('2026-08-05T23:00:00Z'), end:new Date('2026-08-06T23:00:00Z') });
+  is('a bare table falls back to the location minimum',
+    calls.find(c => c.url.includes('/scheduled-time-slots')).body.partySize, 2);
+  is('and a single day is still split below 24 hours',
+    calls.filter(c => c.url.includes('/scheduled-time-slots')).every(c =>
+      new Date(c.body.timeRange.endDate) - new Date(c.body.timeRange.startDate) < 24 * 60 * 60 * 1000), true);
+}
 
 console.log('--- the form offers what runs, not what happened to be booked ---');
 {
