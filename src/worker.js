@@ -161,12 +161,15 @@ async function take(request, url, env, staff) {
 }
 
 /**
- * The week of chips, and the chosen day, in as few calls as it takes.
+ * The week of chips, and the chosen day, from one reading of the schedule.
  *
- * One request covers the chip week, which answers both "does this experience
- * run on that day" for every chip and "what is on at the chosen date" — the
- * same data, read twice. A date reached through the picker can fall outside
- * that week, and then it costs a second request rather than a wider first one.
+ * The chip week answers both "does this experience run on that day" for every
+ * chip and "what is on at the chosen date" — the same data, read twice. A date
+ * reached through the picker can fall outside that week, and then it is asked
+ * for separately rather than widening the first range.
+ *
+ * Wix will not answer a range of 24 hours or more, so the adapter breaks each
+ * of these into a day at a time. What looks like one request here is eight.
  */
 async function schedule(bookings, date, experience) {
   const experienceId = experience ? experience.id : null;
